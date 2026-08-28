@@ -61,7 +61,8 @@ export class Orchestrator {
       this.dependencies.modelRouter.route({
         taskType: execution.taskType,
         context,
-        constraints: execution.constraints
+        constraints: execution.constraints,
+        estimatedInputTokens: context.estimatedTokens
       })
     );
     const tokenDecision = await this.dependencies.tokenGovernor.evaluate({
@@ -69,10 +70,12 @@ export class Orchestrator {
       routingDecision,
       maxInputTokens: execution.constraints.maxInputTokens,
       maxOutputTokens: execution.constraints.maxOutputTokens,
+      maxTotalTokens: execution.constraints.maxTotalTokens,
+      expectedOutputTokens: execution.constraints.expectedOutputTokens,
       maxCostUsd: execution.constraints.maxCostUsd
     });
 
-    if (tokenDecision.status === "deny") {
+    if (tokenDecision.status === "reject") {
       execution.status = "failed";
       execution.updatedAt = new Date();
       await this.dependencies.stateMemory.saveExecution(execution);
@@ -85,7 +88,7 @@ export class Orchestrator {
       })
     );
 
-    execution.status = tokenDecision.status === "deny" ? "failed" : "succeeded";
+    execution.status = tokenDecision.status === "reject" ? "failed" : "succeeded";
     execution.updatedAt = new Date();
     await this.dependencies.stateMemory.saveExecution(execution);
 

@@ -26,14 +26,22 @@ export type ApprovalDecision = "automatic" | "approved" | "rejected" | "pending"
 
 export type EvaluationStatus = "pass" | "fail" | "needs_review";
 
-export type TokenDecisionStatus = "allow" | "trim_required" | "deny";
+export type TokenDecisionStatus = "allow" | "reject";
+
+export type TokenGovernorErrorCode = "token_budget_exceeded";
+
+export type ModelCapability = "text_generation" | "tool_use" | "long_context";
 
 export interface ExecutionConstraints {
   preferredProvider?: ProviderName;
+  preferredModel?: string;
   blockedProviders?: ProviderName[];
+  blockedModels?: string[];
   maxCostUsd?: number;
   maxInputTokens?: number;
   maxOutputTokens?: number;
+  maxTotalTokens?: number;
+  expectedOutputTokens?: number;
   timeoutMs?: number;
 }
 
@@ -117,7 +125,7 @@ export interface RoutingDecision {
   model: string;
   taskType: TaskType;
   reason: string;
-  estimatedCostUsd: number;
+  estimatedCostUsd?: number | null;
   estimatedLatencyClass: "low" | "medium" | "high" | "unknown";
 }
 
@@ -125,8 +133,10 @@ export interface TokenDecision {
   status: TokenDecisionStatus;
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
-  estimatedCostUsd: number;
+  estimatedTotalTokens: number;
+  estimatedCostUsd: number | null;
   reason: string;
+  errorCode?: TokenGovernorErrorCode;
 }
 
 export interface ActionDescriptor {

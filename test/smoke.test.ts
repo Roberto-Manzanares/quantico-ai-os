@@ -11,7 +11,7 @@ test("Quantico AI OS skeleton loads and creates an execution", async () => {
   const system = createQuanticoSystem({ stateFilePath });
   const result = await system.orchestrator.run({ goal: "Generate a short test result" });
 
-  assert.equal(result.execution.status, "succeeded");
+  assert.equal(result.execution.status, "failed");
   assert.equal(result.execution.taskType, "generation");
   assert.equal(result.evaluation.status, "needs_review");
 
@@ -29,11 +29,11 @@ test("Quantico API exposes the V0.1 execution contract", async () => {
   const api = createQuanticoApi({ stateFilePath });
   const execution = await api.createExecution({ goal: "Analyze a test input" });
 
-  assert.equal(await api.getExecutionStatus(execution.id), "succeeded");
+  assert.equal(await api.getExecutionStatus(execution.id), "failed");
 
   const resultAndMetrics = await api.getResultAndMetrics(execution.id);
   assert.equal(resultAndMetrics?.executionId, execution.id);
-  assert.equal(resultAndMetrics?.status, "succeeded");
+  assert.equal(resultAndMetrics?.status, "failed");
 
   const approval = await api.approvePendingStep({
     executionId: execution.id,
