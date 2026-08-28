@@ -33,10 +33,10 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
       return execution?.status;
     },
     async approvePendingStep(command: ApprovalCommand): Promise<ApprovalCommandResult> {
-      return applyPendingStepDecision(command, "approved", system.stateMemory);
+      return system.humanApprovalGate.approvePendingStep(command, system.stateMemory);
     },
     async rejectPendingStep(command: ApprovalCommand): Promise<ApprovalCommandResult> {
-      return applyPendingStepDecision(command, "rejected", system.stateMemory);
+      return system.humanApprovalGate.rejectPendingStep(command, system.stateMemory);
     },
     async getResultAndMetrics(id: string): Promise<ExecutionResultMetrics | undefined> {
       const execution = await system.stateMemory.getExecution(id);
@@ -52,35 +52,5 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
         metrics: execution.metrics
       };
     }
-  };
-}
-
-async function applyPendingStepDecision(
-  command: ApprovalCommand,
-  decisionApplied: "approved" | "rejected",
-  stateMemory: ReturnType<typeof createQuanticoSystem>["stateMemory"]
-): Promise<ApprovalCommandResult> {
-  const execution = await stateMemory.getExecution(command.executionId);
-
-  if (!execution) {
-    throw new Error(`Execution not found: ${command.executionId}`);
-  }
-
-  await stateMemory.appendEvent({
-    id: `event_${Date.now().toString(36)}`,
-    executionId: execution.id,
-    type: "approval_decision",
-    decisionApplied,
-    payload: {
-      reason: command.reason ?? "No reason provided."
-    },
-    createdAt: new Date()
-  });
-
-  return {
-    executionId: execution.id,
-    status: execution.status,
-    decisionApplied,
-    reason: "Approval command recorded; resume/cancel logic is not implemented in the skeleton."
   };
 }

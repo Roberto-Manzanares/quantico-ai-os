@@ -35,17 +35,12 @@ test("Quantico API exposes the V0.1 execution contract", async () => {
   assert.equal(resultAndMetrics?.executionId, execution.id);
   assert.equal(resultAndMetrics?.status, "failed");
 
-  const approval = await api.approvePendingStep({
-    executionId: execution.id,
-    reason: "Smoke test approval"
-  });
-  assert.equal(approval.decisionApplied, "approved");
-
-  const rejection = await api.rejectPendingStep({
-    executionId: execution.id,
-    reason: "Smoke test rejection"
-  });
-  assert.equal(rejection.decisionApplied, "rejected");
+  await assert.rejects(() =>
+    api.approvePendingStep({
+      executionId: execution.id,
+      reason: "Smoke test approval"
+    })
+  );
 
   await rm(stateDir, { recursive: true, force: true });
 });

@@ -24,6 +24,8 @@ export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
 export type ApprovalDecision = "automatic" | "approved" | "rejected" | "pending";
 
+export type HumanApprovalGateStatus = "allow" | "needs_approval" | "rejected";
+
 export type EvaluationStatus = "pass" | "fail" | "needs_review";
 
 export type TokenDecisionStatus = "allow" | "reject";
@@ -127,6 +129,7 @@ export interface ApprovalCommandResult {
   status: ExecutionStatus;
   decisionApplied: ApprovalDecision;
   reason: string;
+  pendingStep?: PendingApprovalStep;
 }
 
 export interface ExecutionEvent {
@@ -137,6 +140,16 @@ export interface ExecutionEvent {
   decisionApplied?: ApprovalDecision;
   payload: Record<string, unknown>;
   createdAt: Date;
+}
+
+export interface PendingApprovalStep {
+  id: string;
+  executionId: string;
+  action: ActionDescriptor;
+  riskLevel: RiskLevel;
+  reason: string;
+  createdAt: Date;
+  metadata: Record<string, unknown>;
 }
 
 export interface CompiledContext {
@@ -167,6 +180,7 @@ export interface TokenDecision {
 }
 
 export interface ActionDescriptor {
+  id?: string;
   name: string;
   description: string;
   riskLevel: RiskLevel;
@@ -175,9 +189,15 @@ export interface ActionDescriptor {
 }
 
 export interface ApprovalResult {
+  status: HumanApprovalGateStatus;
+  executionId?: string;
+  pendingStepId?: string;
+  action: ActionDescriptor;
   riskLevel: RiskLevel;
   decisionApplied: ApprovalDecision;
   reason: string;
+  createdAt: Date;
+  metadata: Record<string, unknown>;
 }
 
 export interface ModelCallRequest {
