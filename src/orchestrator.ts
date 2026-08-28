@@ -81,10 +81,22 @@ export class Orchestrator {
       await this.dependencies.stateMemory.saveExecution(execution);
     }
 
+    execution.status = tokenDecision.status === "reject" ? "failed" : "succeeded";
+    execution.updatedAt = new Date();
+    await this.dependencies.stateMemory.saveExecution(execution);
+
+    const statusForEvaluation = execution.status;
     const evaluation = await this.withStatus(execution, "evaluating", () =>
       this.dependencies.evaluator.evaluate({
-        execution,
-        result: execution.finalResult ?? ""
+        goal: execution.goal,
+        constraints: execution.constraints,
+        taskType: execution.taskType,
+        result: execution.finalResult ?? "",
+        metadata: {
+          executionId: execution.id,
+          status: statusForEvaluation,
+          metrics: execution.metrics
+        }
       })
     );
 

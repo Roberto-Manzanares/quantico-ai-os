@@ -42,8 +42,35 @@ export interface ExecutionConstraints {
   maxOutputTokens?: number;
   maxTotalTokens?: number;
   expectedOutputTokens?: number;
+  evaluationCriteria?: EvaluationCriterion[];
   timeoutMs?: number;
 }
+
+export type EvaluationCriterion =
+  | {
+      type: "contains_text";
+      value: string;
+      description?: string;
+    }
+  | {
+      type: "not_contains_text";
+      value: string;
+      description?: string;
+    }
+  | {
+      type: "min_length";
+      value: number;
+      description?: string;
+    }
+  | {
+      type: "max_length";
+      value: number;
+      description?: string;
+    }
+  | {
+      type: "requires_review";
+      description: string;
+    };
 
 export interface ApprovalPolicy {
   mediumRiskRequiresApproval?: boolean;

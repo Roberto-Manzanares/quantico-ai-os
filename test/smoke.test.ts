@@ -13,7 +13,7 @@ test("Quantico AI OS skeleton loads and creates an execution", async () => {
 
   assert.equal(result.execution.status, "failed");
   assert.equal(result.execution.taskType, "generation");
-  assert.equal(result.evaluation.status, "needs_review");
+  assert.equal(result.evaluation.status, "fail");
 
   const rawState = await readFile(stateFilePath, "utf8");
   const persistedState = JSON.parse(rawState) as { executions: unknown[] };
