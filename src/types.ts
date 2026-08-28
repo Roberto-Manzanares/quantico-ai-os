@@ -141,6 +141,7 @@ export interface ModelCallRequest {
   executionId: string;
   messages: CompiledContext["messages"];
   model: string;
+  maxOutputTokens?: number;
 }
 
 export interface ModelCallResult {
@@ -149,8 +150,18 @@ export interface ModelCallResult {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  estimatedCostUsd: number;
+  estimatedCostUsd?: number | null;
   latencyMs: number;
+}
+
+export type ProviderErrorCode = "provider_unavailable" | "provider_error";
+
+export interface ProviderErrorDetails {
+  provider: ProviderName;
+  model?: string;
+  code: ProviderErrorCode;
+  message: string;
+  statusCode?: number;
 }
 
 export interface EvaluationResult {
