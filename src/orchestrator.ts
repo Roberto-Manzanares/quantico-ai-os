@@ -51,7 +51,11 @@ export class Orchestrator {
     await this.dependencies.stateMemory.saveExecution(execution);
 
     const context = await this.withStatus(execution, "compiling_context", () =>
-      this.dependencies.contextCompiler.compile(request)
+      this.dependencies.contextCompiler.compile({
+        ...request,
+        maxContextTokens: execution.constraints.maxInputTokens,
+        stateMemory: this.dependencies.stateMemory
+      })
     );
     const routingDecision = await this.withStatus(execution, "routing_model", () =>
       this.dependencies.modelRouter.route({
@@ -129,4 +133,3 @@ function determineTaskType(goal: string): TaskType {
 function createExecutionId(): string {
   return `exec_${Date.now().toString(36)}`;
 }
-

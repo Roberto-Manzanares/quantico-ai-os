@@ -49,6 +49,12 @@ export interface ExecutionRequest {
   contextRefs?: string[];
 }
 
+export interface ContextSourceRef {
+  ref: string;
+  label: string;
+  type: "goal" | "constraints" | "text" | "file" | "memory";
+}
+
 export interface ExecutionMetrics {
   inputTokens: number;
   outputTokens: number;
@@ -101,7 +107,7 @@ export interface ExecutionEvent {
 export interface CompiledContext {
   compiledContextId: string;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
-  sourceRefs: string[];
+  sourceRefs: ContextSourceRef[];
   estimatedTokens: number;
   omittedContext: string[];
 }
