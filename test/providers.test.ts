@@ -53,6 +53,107 @@ test("OpenAI adapter normalizes model response", async () => {
   assert.equal(httpClient.requests[0]?.url, "https://api.openai.com/v1/chat/completions");
 });
 
+test("OpenAI adapter normalizes Responses API response", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: "QUANTICO_KERNEL_OK" }]
+        }
+      ],
+      usage: {
+        input_tokens: 17,
+        output_tokens: 9,
+        output_tokens_details: { reasoning_tokens: 2 }
+      }
+    })
+  );
+  const adapter = new OpenAIAdapter({
+    apiKey: "test-openai-key",
+    apiMode: "responses",
+    httpClient,
+    reasoningEffort: "minimal"
+  });
+
+  const result = await adapter.sendMessage({
+    executionId: "exec_test",
+    model: "gpt-5-nano",
+    messages: [{ role: "user", content: "Hello" }],
+    maxOutputTokens: 128
+  });
+  const body = JSON.parse(String(httpClient.requests[0]?.init.body)) as {
+    model: string;
+    input: Array<{ role: string; content: string }>;
+    max_output_tokens: number;
+    reasoning: { effort: string };
+  };
+
+  assert.equal(httpClient.requests[0]?.url, "https://api.openai.com/v1/responses");
+  assert.equal(body.model, "gpt-5-nano");
+  assert.deepEqual(body.input, [{ role: "user", content: "Hello" }]);
+  assert.equal(body.max_output_tokens, 128);
+  assert.equal(body.reasoning.effort, "minimal");
+  assert.equal(result.content, "QUANTICO_KERNEL_OK");
+  assert.equal(result.provider, "openai");
+  assert.equal(result.model, "gpt-5-nano");
+  assert.equal(result.inputTokens, 17);
+  assert.equal(result.outputTokens, 9);
+  assert.equal(result.estimatedCostUsd, null);
+  assert.equal(adapter.getLastDiagnostics()?.reasoningTokens, 2);
+  assert.equal(adapter.getLastDiagnostics()?.outputTextLength, null);
+});
+
+test("OpenAI adapter records safe response diagnostics", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [{ type: "message", content: [{ type: "output_text" }] }],
+      output_text: "",
+      choices: [{ finish_reason: "length", message: { content: "", refusal: null } }],
+      usage: {
+        prompt_tokens: 11,
+        completion_tokens: 7,
+        total_tokens: 18,
+        completion_tokens_details: { reasoning_tokens: 7, text_tokens: 0 }
+      }
+    })
+  );
+  const adapter = new OpenAIAdapter({ apiKey: "test-openai-key", httpClient });
+
+  await adapter.sendMessage({
+    executionId: "exec_test",
+    model: "gpt-test",
+    messages: [{ role: "user", content: "Hello" }]
+  });
+
+  assert.deepEqual(adapter.getLastDiagnostics(), {
+    httpStatus: 200,
+    chatCompletion: {
+      finishReason: "length",
+      messageContentType: "string",
+      messageContentLength: 0,
+      refusal: null,
+      promptTokens: 11,
+      completionTokens: 7,
+      totalTokens: 18,
+      reasoningTokens: 7,
+      textTokens: 0
+    },
+    responseStatus: "incomplete",
+    incompleteDetails: { reason: "max_output_tokens" },
+    usageOutputTokens: 7,
+    reasoningTokens: 7,
+    responseOutputItemCount: 1,
+    responseOutputItemTypes: ["message"],
+    messageContentTypes: ["output_text"],
+    outputTextLength: 0,
+    structuredError: null
+  });
+});
+
 test("Anthropic adapter normalizes model response", async () => {
   const httpClient = new MockHttpClient(
     jsonResponse({
@@ -88,7 +189,9 @@ test("Anthropic adapter normalizes model response", async () => {
 });
 
 test("provider adapters normalize errors", async () => {
-  const httpClient = new MockHttpClient(jsonResponse({ error: "bad request" }, 400));
+  const httpClient = new MockHttpClient(
+    jsonResponse({ error: { type: "invalid_request_error", message: "bad request" } }, 400)
+  );
   const adapter = new OpenAIAdapter({ apiKey: "test-openai-key", httpClient });
 
   await assert.rejects(
@@ -107,6 +210,46 @@ test("provider adapters normalize errors", async () => {
       return true;
     }
   );
+  assert.deepEqual(adapter.getLastDiagnostics()?.structuredError, {
+    type: "invalid_request_error",
+    message: "bad request"
+  });
+});
+
+test("OpenAI Responses API errors are captured as structured provider errors", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse(
+      { error: { type: "invalid_request_error", code: "bad_model", message: "bad request" } },
+      400
+    )
+  );
+  const adapter = new OpenAIAdapter({
+    apiKey: "test-openai-key",
+    apiMode: "responses",
+    httpClient
+  });
+
+  await assert.rejects(
+    () =>
+      adapter.sendMessage({
+        executionId: "exec_test",
+        model: "gpt-5-nano",
+        messages: [{ role: "user", content: "Hello" }]
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ProviderAdapterError);
+      assert.equal(error.provider, "openai");
+      assert.equal(error.model, "gpt-5-nano");
+      assert.equal(error.code, "provider_error");
+      assert.equal(error.statusCode, 400);
+      return true;
+    }
+  );
+  assert.deepEqual(adapter.getLastDiagnostics()?.structuredError, {
+    type: "invalid_request_error",
+    code: "bad_model",
+    message: "bad request"
+  });
 });
 
 test("missing provider API keys map to provider_unavailable", async () => {
