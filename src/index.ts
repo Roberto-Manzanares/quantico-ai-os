@@ -18,29 +18,48 @@ import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
 import { SkeletonModelRouter } from "./components/model-router.js";
 import { FileStateMemory } from "./components/state-memory.js";
 import { SkeletonTokenGovernor } from "./components/token-governor.js";
+import type { ModelConfig, ModelPricingTable } from "./config/model-config.js";
 import { Orchestrator } from "./orchestrator.js";
+import { AnthropicAdapter } from "./providers/anthropic-adapter.js";
+import { OpenAIAdapter } from "./providers/openai-adapter.js";
+import type { ProviderAdapter } from "./providers/provider-adapter.js";
+import type { ProviderName } from "./types.js";
 
 export interface QuanticoSystemOptions {
   stateFilePath?: string;
+  modelConfigs?: ModelConfig[];
+  pricingTable?: ModelPricingTable;
+  providers?: Partial<Record<ProviderName, ProviderAdapter>>;
 }
 
 export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   const stateMemory = new FileStateMemory(options.stateFilePath);
+  const contextCompiler = new SkeletonContextCompiler();
+  const modelRouter = new SkeletonModelRouter(options.modelConfigs);
+  const tokenGovernor = new SkeletonTokenGovernor(options.pricingTable);
+  const humanApprovalGate = new SkeletonHumanApprovalGate();
+  const evaluator = new SkeletonEvaluator();
+  const providers = options.providers ?? {
+    openai: new OpenAIAdapter(),
+    anthropic: new AnthropicAdapter()
+  };
 
   return {
     stateMemory,
-    contextCompiler: new SkeletonContextCompiler(),
-    modelRouter: new SkeletonModelRouter(),
-    tokenGovernor: new SkeletonTokenGovernor(),
-    humanApprovalGate: new SkeletonHumanApprovalGate(),
-    evaluator: new SkeletonEvaluator(),
+    contextCompiler,
+    modelRouter,
+    tokenGovernor,
+    humanApprovalGate,
+    evaluator,
+    providers,
     orchestrator: new Orchestrator({
-      contextCompiler: new SkeletonContextCompiler(),
-      modelRouter: new SkeletonModelRouter(),
-      tokenGovernor: new SkeletonTokenGovernor(),
+      contextCompiler,
+      modelRouter,
+      tokenGovernor,
       stateMemory,
-      humanApprovalGate: new SkeletonHumanApprovalGate(),
-      evaluator: new SkeletonEvaluator()
+      humanApprovalGate,
+      evaluator,
+      providers
     })
   };
 }

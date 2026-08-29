@@ -45,6 +45,7 @@ export interface ExecutionConstraints {
   maxTotalTokens?: number;
   expectedOutputTokens?: number;
   evaluationCriteria?: EvaluationCriterion[];
+  modelCallRiskLevel?: RiskLevel;
   timeoutMs?: number;
 }
 
@@ -109,6 +110,11 @@ export interface Execution {
   createdAt: Date;
   updatedAt: Date;
   finalResult?: string;
+  evaluation?: EvaluationResult;
+  error?: {
+    code: string;
+    message: string;
+  };
   metrics: ExecutionMetrics;
 }
 
@@ -116,6 +122,7 @@ export interface ExecutionResultMetrics {
   executionId: string;
   status: ExecutionStatus;
   finalResult?: string;
+  evaluation?: EvaluationResult;
   metrics: ExecutionMetrics;
 }
 

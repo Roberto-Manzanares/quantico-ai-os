@@ -80,6 +80,18 @@ test("Evaluator returns needs_review for non-deterministic criteria", async () =
   assert.equal(typeof result.recommendedNextAction, "string");
 });
 
+test("Evaluator returns needs_review when no explicit deterministic criteria exist", async () => {
+  const evaluator = new DeterministicEvaluator();
+  const result = await evaluator.evaluate({
+    ...baseInput,
+    constraints: {}
+  });
+
+  assert.equal(result.status, "needs_review");
+  assert.match(result.reason, /No explicit deterministic evaluation criteria/);
+  assert.equal(typeof result.recommendedNextAction, "string");
+});
+
 test("Evaluator result is deterministic for the same input", async () => {
   const evaluator = new DeterministicEvaluator();
   const first = await evaluator.evaluate(baseInput);
@@ -95,4 +107,3 @@ test("Evaluator does not depend on provider adapters", async () => {
   assert.equal(source.includes("AnthropicAdapter"), false);
   assert.equal(source.includes("../providers"), false);
 });
-

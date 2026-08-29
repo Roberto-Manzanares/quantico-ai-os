@@ -49,6 +49,7 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
         executionId: execution.id,
         status: execution.status,
         finalResult: execution.finalResult,
+        evaluation: execution.evaluation,
         metrics: execution.metrics
       };
     }

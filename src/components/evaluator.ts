@@ -46,11 +46,18 @@ export class DeterministicEvaluator implements Evaluator {
       return fail(criteria, constraintFailure);
     }
 
-    const criterionOutcome = evaluateExplicitCriteria(
-      input.constraints.evaluationCriteria ?? [],
-      input.result,
-      criteria
-    );
+    const evaluationCriteria = input.constraints.evaluationCriteria ?? [];
+
+    if (evaluationCriteria.length === 0) {
+      return {
+        status: "needs_review",
+        reason: "No explicit deterministic evaluation criteria were provided.",
+        criteria,
+        recommendedNextAction: "Add explicit evaluation criteria or review the result manually."
+      };
+    }
+
+    const criterionOutcome = evaluateExplicitCriteria(evaluationCriteria, input.result, criteria);
 
     if (criterionOutcome.status === "fail") {
       return fail(criteria, criterionOutcome.reason);
