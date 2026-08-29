@@ -2,13 +2,29 @@
 
 ## Estado Actual
 
-Fase: especificacion inicial.
+Fase: V0.1 validated.
 
 Version objetivo: MVP V0.1.
 
-Codigo implementado: no.
+Codigo implementado: si.
 
-Commit realizado: no.
+Estado actual: V0.1 validated.
+
+Ultimo hito: ejecucion real exitosa del Kernel end-to-end.
+
+Provider validado: OpenAI.
+
+Endpoint validado: Responses API.
+
+Modelo usado: `gpt-5-nano`.
+
+Resultado: `succeeded` / evaluation `pass`.
+
+Tests actuales: 52/52 pass.
+
+Ultimo commit funcional: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
+
+Siguiente fase: V0.2.
 
 ## Objetivo Del Producto
 
@@ -44,25 +60,46 @@ Excluido:
 - `AGENTS.md`
 - `PROJECT_STATE.md`
 - `DECISIONS.md`
+- Skeleton tecnico TypeScript/Node.js
+- Runner manual OpenAI `smoke:openai`
 
 ## Supuestos Actuales
 
-- V0.1 sera local-first o service-first minimo, sin requisitos de infraestructura empresarial.
-- La persistencia inicial puede ser simple mientras sea estructurada y consultable.
-- OpenAI y Anthropic se conectaran mediante adapters con contrato comun.
-- La medicion de costo usara estimaciones basadas en tabla configurable de precios.
-- La aprobacion humana sera parte del flujo de ejecucion, no una funcionalidad posterior.
+- V0.1 opera con TypeScript y Node.js.
+- State/Memory usa persistencia local estructurada y reemplazable.
+- OpenAI y Anthropic mantienen adapters con contrato comun.
+- La medicion de costo usa estimaciones basadas en tabla configurable de precios.
+- La aprobacion humana forma parte del flujo de ejecucion.
+- No se deben incluir secretos ni valores de `.env` en documentacion, logs o commits.
 
-## Pendiente Antes De Implementar
+## Cierre V0.1
 
-- Elegir lenguaje y runtime.
-- Elegir formato de persistencia para State/Memory.
-- Definir modelos iniciales por provider.
-- Definir tabla inicial de precios.
-- Definir formato exacto de API.
-- Definir comandos concretos de CLI.
-- Definir politica inicial de aprobacion.
-- Definir pruebas minimas de aceptacion.
+V0.1 queda cerrada documentalmente despues de validar una ejecucion real satisfactoria del Kernel contra OpenAI mediante Responses API.
+
+La ejecucion validada recorrio el flujo:
+
+- Context Compiler
+- Model Router
+- Token Governor
+- Human Approval Gate
+- OpenAI Adapter
+- Evaluator
+- State/Memory
+
+La validacion confirmo:
+
+- Estado final `succeeded`.
+- Evaluacion `pass`.
+- Provider OpenAI ejecutado via Responses API.
+- Modelo `gpt-5-nano`.
+- Presupuesto de costo/tokens aplicado.
+- Resultado persistido sin incluir secretos.
+
+## Pendiente Para V0.2
+
+- Definir el siguiente bloque funcional.
+- Evaluar validacion real de Anthropic si se prioriza paridad de providers.
+- Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
 
 ## Riesgos Detectados
 
@@ -77,8 +114,8 @@ Excluido:
 
 - Los cinco documentos base existen en la raiz del proyecto.
 - Los documentos declaran explicitamente alcance incluido y excluido.
-- No existe codigo de implementacion.
-- No existe commit creado para esta especificacion.
+- Existe skeleton tecnico validado para V0.1.
+- Existe commit funcional de validacion real OpenAI: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 - Los riesgos iniciales estan documentados.
-- Los pendientes antes de implementar estan listados.
-
+- Los pendientes para V0.2 estan listados.
+- No se documentan secretos ni valores de `.env`.

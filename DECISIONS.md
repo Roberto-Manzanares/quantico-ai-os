@@ -152,3 +152,28 @@ Criterios de aceptacion:
 - El Evaluator devuelve `pass`, `fail`, o `needs_review`.
 - La razon de evaluacion queda disponible en el resultado.
 
+## Decision 008: OpenAI Responses API Como Path Configurable
+
+Estado: aceptada.
+
+Decision:
+
+OpenAI mantiene compatibilidad con Chat Completions y agrega Responses API como path explicito/configurable cuando se requiere mejor control sobre reasoning y salida visible.
+
+Razon:
+
+La primera ejecucion real con `gpt-5-nano` mostro que Chat Completions podia consumir tokens de salida en reasoning sin producir texto visible. Responses API permite configurar `reasoning.effort` y extraer salida visible desde la estructura REST del response.
+
+Consecuencia:
+
+El selector de endpoint permanece explicito/configurable. El contrato `ProviderAdapter` no cambia y el Orchestrator sigue desacoplado de detalles especificos de OpenAI.
+
+No se adopta Responses API como unico endpoint obligatorio en V0.1.
+
+Criterios de aceptacion:
+
+- OpenAI puede usar Chat Completions sin cambiar el contrato comun.
+- OpenAI puede usar Responses API mediante configuracion explicita.
+- El contrato `ProviderAdapter` se mantiene estable.
+- El parsing de Responses API extrae `output_text` visible desde la respuesta REST.
+- V0.1 queda cerrada despues de una ejecucion real satisfactoria con presupuesto, evaluacion y persistencia.
