@@ -868,3 +868,102 @@ Las metricas deben ser explicables desde entradas persistidas. Si falta informac
 - El Scorecard no modifica Model Router, Token Governor, Budget Enforcement ni ProviderAdapter.
 - El Router COST-FIRST sigue siendo la autoridad de seleccion automatica.
 - No se agregan aprendizaje automatico, ranking opaco, fallback, retries, dashboard, optimizacion historica automatica ni nuevos providers.
+
+## Apertura V0.7
+
+Titulo: V0.7 - Provider Scorecard Read API.
+
+Estado de V0.6: cerrada y congelada.
+
+Commit de cierre V0.6: `9120bc008b106b0963a9659ce4d55e4c20cfb412`.
+
+V0.7 comienza como fase separada.
+
+### Objetivo V0.7
+
+Exponer el Provider Scorecard minimo mediante una API y/o CLI read-only para consultar metricas auditables por provider/model sin afectar decisiones de routing.
+
+### Alcance V0.7
+
+Incluido:
+
+- Consulta read-only de scorecard por `provider/model`.
+- Listado read-only de scorecards agregados.
+- Salida auditable con las metricas V0.6:
+  - `executionCount`.
+  - `successCount`.
+  - `failureCount`.
+  - `needsHumanCount`.
+  - `evaluationPassCount`.
+  - `evaluationFailCount`.
+  - `evaluationNeedsReviewCount`.
+  - `totalActualCostUsd`.
+  - `averageActualCostUsd`.
+  - `averageLatencyMs`.
+  - `lastUpdatedAt`.
+  - `dataQuality`.
+  - `reason`, cuando aplique.
+- API minima y/o CLI minima para inspeccion operacional.
+- Reutilizacion del Provider Scorecard V0.6 como fuente de datos.
+
+Fuera de alcance:
+
+- Dashboard.
+- Ranking automatico.
+- Cambios al Router COST-FIRST.
+- Cambios a decisiones de routing.
+- Fallback.
+- Retries.
+- Llamadas adicionales a providers.
+- Aprendizaje automatico.
+- Provider Scorecard como decisor.
+- Nuevos providers.
+
+### Contrato Read API V0.7
+
+La API y/o CLI read-only debe permitir:
+
+- Listar todos los agregados disponibles.
+- Consultar un agregado especifico por `provider` y `model`.
+- Devolver `not_found` o resultado vacio verificable cuando no exista scorecard para el provider/model solicitado.
+
+Entrada minima para consulta especifica:
+
+- `provider`.
+- `model`.
+
+Salida minima para listado:
+
+- Coleccion de agregados por `provider:model`.
+
+Salida minima para consulta especifica:
+
+- Un agregado Provider Scorecard V0.6 completo cuando exista.
+- Estado `not_found` o equivalente auditable cuando no exista.
+
+### Semantica V0.7
+
+La Read API solo expone datos ya resumidos o derivables desde State/Memory y Budget Ledger. No debe crear ejecuciones, llamar providers, recalcular decisiones de routing ni escribir cambios operacionales.
+
+La respuesta debe preservar `dataQuality` y `reason` para que un consumidor pueda distinguir datos completos de parciales.
+
+### Casos Limite V0.7
+
+- Si no existen entradas de scorecard, el listado devuelve coleccion vacia.
+- Si se consulta un `provider/model` sin datos, la consulta devuelve `not_found` o equivalente auditable.
+- Si un scorecard tiene `dataQuality` `partial`, la API/CLI debe devolver tambien la razon.
+- Si State/Memory no puede leerse, la API/CLI debe fallar limpiamente sin inventar metricas.
+- La consulta no debe producir llamadas a OpenAI, Anthropic ni otros providers.
+- La consulta no debe cambiar Router COST-FIRST ni Budget Enforcement.
+- La consulta no debe ordenar resultados como ranking de calidad o recomendacion automatica.
+
+### Criterios De Aceptacion V0.7
+
+- La API y/o CLI lista scorecards agregados de forma read-only.
+- La API y/o CLI permite consultar por `provider/model`.
+- La salida incluye todas las metricas V0.6 aplicables.
+- La salida conserva `dataQuality` y `reason` cuando aplique.
+- Un `provider/model` inexistente devuelve `not_found` o resultado vacio verificable.
+- No se ejecutan llamadas adicionales a providers.
+- No se modifica Router COST-FIRST.
+- No se agregan fallback, retries, dashboard, ranking automatico, aprendizaje automatico ni nuevos providers.

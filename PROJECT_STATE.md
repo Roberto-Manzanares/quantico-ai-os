@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.6 ready to close.
+Fase: V0.7 ready to close.
 
-Version objetivo: V0.6.
+Version objetivo: V0.7.
 
 Codigo implementado: si.
 
-Estado actual: V0.6 implementada y validada por dry-run.
+Estado actual: V0.7 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Provider Scorecard minimo.
+Ultimo hito: dry-run final de Provider Scorecard Read API.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 92/92 pass.
+Tests actuales: 96/96 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -77,6 +77,14 @@ V0.6: implementada y validada por dry-run.
 Titulo V0.6: Provider Scorecard minimo.
 
 Objetivo V0.6: observar y resumir desempeno por provider/model usando solo datos operacionales existentes, sin cambiar decisiones de routing.
+
+Commit de cierre V0.6: `9120bc008b106b0963a9659ce4d55e4c20cfb412`.
+
+V0.7: implementada y validada por dry-run.
+
+Titulo V0.7: Provider Scorecard Read API.
+
+Objetivo V0.7: exponer el Provider Scorecard minimo mediante API y/o CLI read-only para inspeccion auditable sin cambiar Router COST-FIRST.
 
 Defaults economicos V0.2:
 
@@ -254,9 +262,32 @@ Resultados del dry-run:
 - Separacion por `provider:model` verificada.
 - Tests: 92/92 pass.
 
+## Cierre V0.7
+
+V0.7 queda lista para cierre despues de implementar y validar por dry-run la Provider Scorecard Read API.
+
+La validacion confirmo:
+
+- `listProviderScorecards()` devuelve scorecards de OpenAI y Anthropic.
+- `getProviderScorecard()` devuelve `found` para un provider/model existente.
+- `getProviderScorecard()` devuelve `not_found` auditable con razon para un provider/model inexistente.
+- Las metricas devueltas son iguales a las metricas V0.6.
+- La lectura no modifica State/Memory.
+- Router COST-FIRST permanece intacto.
+- Tests: 96/96 pass.
+
+Resultados del dry-run:
+
+- `openai:gpt-5-nano`: 2 ejecuciones, 1 `succeeded`, 1 `failed`, 1 `pass`, 1 `fail`.
+- `openai:gpt-5-nano`: `totalActualCostUsd` 0.000036, `averageActualCostUsd` 0.000018, `averageLatencyMs` 2000, `dataQuality` `complete`.
+- `anthropic:claude-haiku-4-5-20251001`: 2 ejecuciones, 1 `succeeded`, 1 `failed`, 1 `pass`, 1 `fail`.
+- `anthropic:claude-haiku-4-5-20251001`: `totalActualCostUsd` 0.000295, `averageActualCostUsd` 0.000295, `averageLatencyMs` 1220.5, `dataQuality` `partial`.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.7 documentalmente antes de tocar codigo.
+- Definir V0.8 documentalmente antes de tocar codigo.
+- Mantener Router COST-FIRST sin cambios.
+- No agregar ranking automatico, fallback ni retries.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
 - Mantener `maxExecutionCostUsd` y `maxProjectCostUsd` como presupuestos acumulados opcionales.
 - Mantener `projectId` explicito obligatorio cuando `maxProjectCostUsd` este activo.
@@ -300,6 +331,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.5 queda validada con dry-run verificable de Budget Enforcement, bloqueos acumulados, fail-closed y cero llamadas a provider en bloqueos.
 - V0.6 declara contrato de Provider Scorecard minimo, agregados, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.6 queda validada con dry-run verificable de Provider Scorecard, agregados por provider/model, `dataQuality` parcial y 92/92 tests.
+- V0.7 declara contrato de Provider Scorecard Read API, consulta por provider/model, listado agregado, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.7 queda validada con dry-run verificable de Provider Scorecard Read API, consulta `found`, consulta `not_found`, lectura read-only y 96/96 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

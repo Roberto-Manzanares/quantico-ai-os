@@ -21,6 +21,7 @@ import { SkeletonBudgetLedger } from "./components/budget-ledger.js";
 import { SkeletonEvaluator } from "./components/evaluator.js";
 import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
 import { SkeletonModelRouter } from "./components/model-router.js";
+import { SkeletonProviderScorecard } from "./components/provider-scorecard.js";
 import { FileStateMemory } from "./components/state-memory.js";
 import { SkeletonTokenGovernor } from "./components/token-governor.js";
 import { DEFAULT_MODEL_PRICING_TABLE, type ModelConfig, type ModelPricingTable } from "./config/model-config.js";
@@ -45,6 +46,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   const tokenGovernor = new SkeletonTokenGovernor(pricingTable);
   const budgetEnforcementGate = new SkeletonBudgetEnforcementGate(stateMemory);
   const budgetLedger = new SkeletonBudgetLedger(stateMemory, pricingTable);
+  const providerScorecard = new SkeletonProviderScorecard(stateMemory);
   const humanApprovalGate = new SkeletonHumanApprovalGate();
   const evaluator = new SkeletonEvaluator();
   const providers = options.providers ?? {
@@ -59,6 +61,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     tokenGovernor,
     budgetEnforcementGate,
     budgetLedger,
+    providerScorecard,
     humanApprovalGate,
     evaluator,
     providers,

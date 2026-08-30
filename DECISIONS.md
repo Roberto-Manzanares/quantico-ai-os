@@ -594,3 +594,79 @@ Criterios de aceptacion:
 - Costo total/promedio y latencia promedio usan solo datos disponibles.
 - La falta de datos marca `dataQuality` `partial` con razon auditable.
 - No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.
+
+## Decision 019: V0.7 Abre Provider Scorecard Read API
+
+Estado: aceptada.
+
+Decision:
+
+V0.7 se abre como fase separada para exponer el Provider Scorecard minimo mediante API y/o CLI read-only.
+
+Razon:
+
+V0.6 ya calcula agregados auditables por provider/model. El siguiente paso operacional es permitir consultar esos agregados sin cambiar decisiones de routing ni crear una interfaz visual prematura.
+
+Consecuencia:
+
+La API y/o CLI debe permitir:
+
+- Listar scorecards agregados.
+- Consultar un scorecard por `provider/model`.
+- Devolver la salida auditable con metricas V0.6.
+- Preservar `dataQuality` y `reason`.
+- Responder `not_found` o equivalente cuando no exista scorecard para el provider/model solicitado.
+
+La Read API es estrictamente read-only. No crea ejecuciones, no llama providers, no cambia Router COST-FIRST, no aplica ranking automatico, no ejecuta fallback y no hace retries.
+
+Quedan fuera dashboard, ranking automatico, cambios de routing, fallback, retries, llamadas adicionales a providers, aprendizaje automatico, nuevos providers y cualquier uso del Scorecard como decisor.
+
+Criterios de aceptacion:
+
+- Existe una consulta read-only por `provider/model`.
+- Existe listado read-only de scorecards agregados.
+- La salida incluye las metricas V0.6 aplicables.
+- La salida conserva razones de datos parciales.
+- Una consulta sin datos devuelve `not_found` o equivalente auditable.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+- No se ejecutan llamadas adicionales a providers.
+
+## Decision 020: V0.7 Cierra Provider Scorecard Read API Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.7 queda cerrada despues de implementar y validar por dry-run la Provider Scorecard Read API read-only.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede consultar los agregados del Provider Scorecard por API sin modificar State/Memory, sin llamar providers y sin alterar Router COST-FIRST.
+
+Evidencia:
+
+- `listProviderScorecards()` devuelve scorecards de OpenAI y Anthropic.
+- `getProviderScorecard()` devuelve `found` para `openai:gpt-5-nano`.
+- `getProviderScorecard()` devuelve `not_found` auditable para `anthropic:missing-model`.
+- Las metricas devueltas coinciden con V0.6.
+- La lectura no modifica State/Memory.
+- Router COST-FIRST permanece intacto.
+- Tests: 96/96 pass.
+
+Resultados:
+
+- `openai:gpt-5-nano`: `totalActualCostUsd` 0.000036, `averageActualCostUsd` 0.000018, `averageLatencyMs` 2000, `dataQuality` `complete`.
+- `anthropic:claude-haiku-4-5-20251001`: `totalActualCostUsd` 0.000295, `averageActualCostUsd` 0.000295, `averageLatencyMs` 1220.5, `dataQuality` `partial`.
+
+Consecuencia:
+
+Provider Scorecard queda expuesto mediante API read-only minima. No decide routing, no modifica COST-FIRST, no ejecuta providers, no hace fallback, no hace retries y no introduce dashboard.
+
+Criterios de aceptacion:
+
+- El listado read-only devuelve todos los scorecards disponibles.
+- La consulta por provider/model existente devuelve `found`.
+- La consulta por provider/model inexistente devuelve `not_found` con razon auditable.
+- La lectura no muta State/Memory.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+- No se agregan llamadas reales, fallback, retries, dashboard, ranking automatico ni aprendizaje automatico.

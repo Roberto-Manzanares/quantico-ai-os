@@ -4,7 +4,10 @@ import type {
   Execution,
   ExecutionRequest,
   ExecutionResultMetrics,
-  ExecutionStatus
+  ExecutionStatus,
+  ProviderName,
+  ProviderScorecardLookupResult,
+  ProviderScorecardSummary
 } from "./types.js";
 import { createQuanticoSystem } from "./index.js";
 
@@ -15,6 +18,8 @@ export interface QuanticoApi {
   approvePendingStep(command: ApprovalCommand): Promise<ApprovalCommandResult>;
   rejectPendingStep(command: ApprovalCommand): Promise<ApprovalCommandResult>;
   getResultAndMetrics(id: string): Promise<ExecutionResultMetrics | undefined>;
+  listProviderScorecards(): Promise<ProviderScorecardSummary>;
+  getProviderScorecard(provider: ProviderName, model: string): Promise<ProviderScorecardLookupResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -51,6 +56,31 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
         finalResult: execution.finalResult,
         evaluation: execution.evaluation,
         metrics: execution.metrics
+      };
+    },
+    async listProviderScorecards(): Promise<ProviderScorecardSummary> {
+      return system.providerScorecard.summarize();
+    },
+    async getProviderScorecard(
+      provider: ProviderName,
+      model: string
+    ): Promise<ProviderScorecardLookupResult> {
+      const summary = await system.providerScorecard.summarize();
+      const key = `${provider}:${model}`;
+      const scorecard = summary.byModel[key];
+
+      if (!scorecard) {
+        return {
+          status: "not_found",
+          provider,
+          model,
+          reason: `Provider scorecard not found for ${provider}/${model}.`
+        };
+      }
+
+      return {
+        status: "found",
+        scorecard
       };
     }
   };

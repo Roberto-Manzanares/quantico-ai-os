@@ -312,6 +312,18 @@ export interface ProviderScorecardSummary {
   byModel: Record<string, ProviderScorecardAggregate>;
 }
 
+export type ProviderScorecardLookupResult =
+  | {
+      status: "found";
+      scorecard: ProviderScorecardAggregate;
+    }
+  | {
+      status: "not_found";
+      provider: ProviderName;
+      model: string;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
