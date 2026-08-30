@@ -413,3 +413,101 @@ Criterios de aceptacion:
 - Los acumulados simples se derivan solo de entradas con `actualCostUsd` calculable.
 - Estados incompletos no representan datos desconocidos como cero.
 - No hay entradas prematuras para ejecuciones no terminales o pendientes de aprobacion.
+
+## Decision 015: V0.5 Abre Budget Enforcement
+
+Estado: aceptada.
+
+Decision:
+
+V0.5 se abre como fase separada para usar el Budget Ledger como fuente de verdad operativa y bloquear nuevas llamadas cuando el gasto acumulado mas el costo estimado de la siguiente llamada exceda un presupuesto configurado.
+
+Razon:
+
+V0.4 ya registra costo real post-ejecucion y acumulados simples. El siguiente control operativo es impedir gasto adicional antes de llamar al provider cuando el presupuesto acumulado por ejecucion o proyecto ya no permite la siguiente llamada.
+
+Consecuencia:
+
+Se introduce un gate de Budget Enforcement despues de Token Governor y antes de Human Approval Gate.
+
+El orden esperado queda:
+
+```text
+Context Compiler
+-> Model Router
+-> Token Governor
+-> Budget Enforcement
+-> Human Approval Gate
+-> Provider
+```
+
+Token Governor mantiene autoridad sobre la llamada individual. Budget Enforcement valida acumulados historicos mas `estimatedNextCallCostUsd`.
+
+El gate debe devolver una decision auditable:
+
+- `allowed`.
+- `blocked_execution_budget`.
+- `blocked_project_budget`.
+- `budget_unknown`.
+
+Cada decision debe registrar executionId, projectId si aplica, `accumulatedActualCostUsd`, `estimatedNextCallCostUsd`, `applicableBudgetUsd`, `projectedCostUsd`, decision y razon.
+
+Semantica fail-closed:
+
+Si no puede demostrarse de forma segura el gasto acumulado o el costo estimado de la siguiente llamada, se bloquea con `budget_unknown`.
+
+`missing_usage` y `missing_pricing` no se tratan como costo cero silenciosamente.
+
+La asociacion por proyecto usara un `projectId` explicito cuando `maxProjectCostUsd` este activo. Si falta `projectId` con presupuesto de proyecto activo, Budget Enforcement debe devolver `budget_unknown`.
+
+Si no existe `maxProjectCostUsd`, `projectId` puede seguir siendo opcional. Las ejecuciones sin `projectId` no se mezclan dentro de un proyecto artificial.
+
+Quedan fuera billing, facturacion, cuotas por usuario u organizacion, dashboard, alertas automaticas, retries, fallback, scorecards, optimizacion historica, nuevos providers, cobro y markup.
+
+Criterios de aceptacion:
+
+- `maxExecutionCostUsd` bloquea si gasto real acumulado por ejecucion mas siguiente costo estimado excede el limite.
+- `maxProjectCostUsd` bloquea si gasto real acumulado por proyecto mas siguiente costo estimado excede el limite.
+- Un costo proyectado igual al presupuesto permite continuar.
+- `maxProjectCostUsd` sin `projectId` devuelve `budget_unknown`.
+- Falta de costo estimado siguiente o gasto acumulado verificable devuelve `budget_unknown`.
+- Provider no se llama cuando Budget Enforcement bloquea.
+- Cada decision queda registrada de forma auditable.
+
+## Decision 016: V0.5 Cierra Budget Enforcement Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.5 queda cerrada despues de implementar y validar por dry-run Budget Enforcement como gate acumulado entre Token Governor y Human Approval Gate.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede bloquear antes de llamar al provider cuando el gasto acumulado real del ledger mas la siguiente llamada estimada excede presupuesto por ejecucion o proyecto.
+
+Evidencia:
+
+- Execution projected 0.00060 -> `allowed`.
+- Project projected 0.00090 -> `allowed`.
+- `maxExecutionCostUsd` 0.00059 -> `blocked_execution_budget`.
+- `maxProjectCostUsd` 0.00089 -> `blocked_project_budget`.
+- `maxProjectCostUsd` sin `projectId` -> `budget_unknown`.
+- `missing_usage` aplicable -> `budget_unknown`.
+- Provider calls en bloqueos y `budget_unknown`: 0.
+- Tests: 87/87 pass.
+
+Consecuencia:
+
+Budget Enforcement queda validado como control pre-provider para presupuestos acumulados. Token Governor conserva autoridad sobre limites de llamada individual y Budget Ledger sigue siendo la fuente de verdad para gasto real acumulado.
+
+Quedan fuera billing, facturacion, cuotas por usuario u organizacion, dashboard, alertas automaticas, retries, fallback, scorecards, optimizacion historica, nuevos providers, cobro y markup.
+
+Criterios de aceptacion:
+
+- Igualdad exacta con el presupuesto permite continuar.
+- Exceso por presupuesto de ejecucion bloquea antes del provider.
+- Exceso por presupuesto de proyecto bloquea antes del provider.
+- Presupuesto de proyecto sin `projectId` falla cerrado con `budget_unknown`.
+- Usage/pricing desconocido aplicable falla cerrado con `budget_unknown`.
+- Los bloqueos y estados `budget_unknown` no llaman providers.

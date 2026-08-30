@@ -12,6 +12,7 @@ import type { StateMemory } from "./state-memory.js";
 
 export interface BudgetLedgerInput {
   executionId: string;
+  projectId?: string;
   routingDecision: RoutingDecision;
   tokenDecision: TokenDecision;
   modelCall?: ModelCallResult;
@@ -55,6 +56,7 @@ export class BudgetLedgerV04 implements BudgetLedger {
     const estimatedCostUsd = input.tokenDecision.estimatedCostUsd ?? input.routingDecision.estimatedCostUsd ?? null;
     const base = {
       executionId: input.executionId,
+      projectId: input.projectId,
       provider: input.routingDecision.provider,
       model: input.routingDecision.model,
       estimatedInputTokens: input.tokenDecision.estimatedInputTokens,
@@ -115,6 +117,7 @@ export class BudgetLedgerV04 implements BudgetLedger {
 export function summarizeBudgetLedgerEntries(entries: BudgetLedgerEntry[]): BudgetLedgerSummary {
   const summary: BudgetLedgerSummary = {
     byExecution: {},
+    byProject: {},
     byProvider: emptyProviderTotals(),
     byModel: {}
   };
@@ -125,6 +128,9 @@ export function summarizeBudgetLedgerEntries(entries: BudgetLedgerEntry[]): Budg
     }
 
     addToTotals(summary.byExecution, entry.executionId, entry);
+    if (entry.projectId) {
+      addToTotals(summary.byProject, entry.projectId, entry);
+    }
     addToTotals(summary.byProvider, entry.provider, entry);
     addToTotals(summary.byModel, `${entry.provider}:${entry.model}`, entry);
   }

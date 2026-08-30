@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.4 validated.
+Fase: V0.5 validated.
 
-Version objetivo: V0.4.
+Version objetivo: V0.5.
 
 Codigo implementado: si.
 
-Estado actual: V0.4 validada con dry-run verificable.
+Estado actual: V0.5 validada con dry-run verificable.
 
-Ultimo hito: implementacion y dry-run del Budget Ledger.
+Ultimo hito: implementacion y dry-run de Budget Enforcement.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 74/74 pass.
+Tests actuales: 87/87 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -61,6 +61,14 @@ V0.4: cerrada y congelada.
 Titulo V0.4: Actual Cost Accounting + Budget Ledger.
 
 Objetivo V0.4: cerrar el ciclo economico del Kernel comparando costo estimado pre-ejecucion contra costo real post-ejecucion y persistiendo un ledger auditable.
+
+Commit de cierre V0.4: `2b8df9eb7d5fb8962d95bd90ebafee95295cf301`.
+
+V0.5: cerrada y congelada.
+
+Titulo V0.5: Budget Enforcement.
+
+Objetivo V0.5: usar el Budget Ledger como fuente de verdad operativa para impedir nuevas llamadas cuando el gasto acumulado mas el costo estimado de la siguiente llamada exceda un limite configurado.
 
 Defaults economicos V0.2:
 
@@ -199,16 +207,35 @@ La validacion confirmo:
 - Una ejecucion terminal sin provider crea entrada `not_applicable`.
 - El ledger no persiste prompts ni secretos.
 
+## Cierre V0.5
+
+V0.5 queda cerrada despues de validar por dry-run el Budget Enforcement acumulado por ejecucion y proyecto.
+
+La validacion confirmo:
+
+- Execution projected: 0.00060 -> `allowed`.
+- Project projected: 0.00090 -> `allowed`.
+- `maxExecutionCostUsd` 0.00059 -> `blocked_execution_budget`.
+- `maxProjectCostUsd` 0.00089 -> `blocked_project_budget`.
+- `maxProjectCostUsd` sin `projectId` -> `budget_unknown`.
+- `missing_usage` aplicable -> `budget_unknown`.
+- Provider calls en bloqueos y `budget_unknown`: 0.
+- Tests: 87/87 pass.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir objetivo concreto de V0.5 antes de tocar codigo.
+- Definir objetivo concreto de V0.6 antes de tocar codigo.
+- Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
+- Mantener `maxExecutionCostUsd` y `maxProjectCostUsd` como presupuestos acumulados opcionales.
+- Mantener `projectId` explicito obligatorio cuando `maxProjectCostUsd` este activo.
+- Mantener fail-closed cuando no pueda demostrarse gasto acumulado de forma segura.
 - Mantener `estimatedCostUsd` como costo pre-ejecucion de Router/Token Governor.
 - Mantener `actualCostUsd` como costo post-ejecucion calculado desde usage real y snapshot de pricing registrado en el ledger.
 - Mantener ledger auditable por ejecucion, provider y modelo.
 - Mantener Router COST-FIRST con pricing configurado y verificable.
 - Mantener Token Governor como autoridad final de presupuesto.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
-- No implementar billing, facturacion, cuotas, fallback automatico, scorecards, retries automaticos, routing historico, alertas automaticas ni nuevos providers sin decision documental previa.
+- No implementar billing, facturacion, cuotas por usuario u organizacion, fallback automatico, scorecards, retries automaticos, routing historico, alertas automaticas ni nuevos providers en V0.5.
 
 ## Criterio De Cierre V0.2
 
@@ -236,6 +263,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.3 queda validada con Router COST-FIRST real seleccionando OpenAI `gpt-5-nano` sobre Anthropic `claude-haiku-4-5-20251001` por menor costo estimado compatible.
 - V0.4 declara contrato de ledger, semantica estimated vs actual, estados de costo real y casos limite antes de tocar codigo.
 - V0.4 queda validada con dry-run verificable de Budget Ledger, costo real, delta, snapshots historicos y acumulados persistibles.
+- V0.5 declara contrato de Budget Enforcement, precedencia de gates, fail-closed, casos limite y estrategia minima de projectId antes de tocar codigo.
+- V0.5 queda validada con dry-run verificable de Budget Enforcement, bloqueos acumulados, fail-closed y cero llamadas a provider en bloqueos.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

@@ -8,6 +8,7 @@ import {
   ProviderAdapterError,
   type ModelCallRequest,
   type ModelCallResult,
+  type BudgetLedgerEntry,
   type ModelConfig,
   type ModelPricingTable,
   type ProviderAdapter
@@ -87,6 +88,7 @@ test("Kernel executes the full V0.1 flow successfully with a fake provider", asy
   assert.ok(events.some((event) => event.type === "budget_ledger_recorded"));
   assert.ok(events.some((event) => event.type === "evaluation_completed"));
   assert.equal(ledgerEntries.length, 1);
+  assert.equal(ledgerEntries[0]?.projectId, undefined);
   assert.equal(ledgerEntries[0]?.calculationStatus, "calculated");
   assert.equal(ledgerEntries[0]?.inputPricePerMillion, 1);
   assert.equal(ledgerEntries[0]?.outputPricePerMillion, 2);
@@ -94,6 +96,45 @@ test("Kernel executes the full V0.1 flow successfully with a fake provider", asy
 
   const rawState = await readFile(stateFilePath, "utf8");
   assert.match(rawState, /kernel success result/);
+
+  await cleanup();
+});
+
+test("Kernel blocks before provider when project budget would be exceeded", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const provider = new FakeProvider({ content: "should not be called" });
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai: provider }
+  });
+  await system.stateMemory.saveBudgetLedgerEntry(
+    ledgerEntry({
+      executionId: "exec_previous_project_spend",
+      projectId: "project_budget",
+      actualCostUsd: 0.9
+    })
+  );
+
+  const result = await system.orchestrator.run({
+    projectId: "project_budget",
+    goal: "Generate blocked by project budget",
+    constraints: {
+      preferredProvider: "openai",
+      expectedOutputTokens: 50,
+      maxProjectCostUsd: 0.90005
+    }
+  });
+  const events = await system.stateMemory.listEvents(result.execution.id);
+  const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(result.execution.id);
+
+  assert.equal(result.execution.status, "failed");
+  assert.equal(provider.calls.length, 0);
+  assert.equal(result.execution.error?.code, "blocked_project_budget");
+  assert.ok(events.some((event) => event.type === "budget_enforced"));
+  assert.equal(ledgerEntries.length, 1);
+  assert.equal(ledgerEntries[0]?.calculationStatus, "not_applicable");
 
   await cleanup();
 });
@@ -272,5 +313,27 @@ async function stateFile(): Promise<{ stateFilePath: string; cleanup: () => Prom
   return {
     stateFilePath: join(stateDir, "state.json"),
     cleanup: () => rm(stateDir, { recursive: true, force: true })
+  };
+}
+
+function ledgerEntry(overrides: Partial<BudgetLedgerEntry> = {}): BudgetLedgerEntry {
+  return {
+    executionId: "exec_ledger",
+    projectId: "project_fixture",
+    provider: "openai",
+    model: "kernel-test-model",
+    estimatedInputTokens: 10,
+    expectedOutputTokens: 10,
+    actualInputTokens: 10,
+    actualOutputTokens: 10,
+    inputPricePerMillion: 1,
+    outputPricePerMillion: 2,
+    estimatedCostUsd: 0.00003,
+    actualCostUsd: 0.00003,
+    costDeltaUsd: 0,
+    latencyMs: 1,
+    timestamp: new Date("2026-08-29T00:00:00.000Z"),
+    calculationStatus: "calculated",
+    ...overrides
   };
 }

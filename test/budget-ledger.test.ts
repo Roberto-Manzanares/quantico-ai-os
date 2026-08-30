@@ -47,6 +47,7 @@ test("Budget Ledger calculates actual cost, delta, and pricing snapshot", async 
   });
 
   assert.equal(entry.calculationStatus, "calculated");
+  assert.equal(entry.projectId, undefined);
   assert.equal(entry.inputPricePerMillion, 1.2);
   assert.equal(entry.outputPricePerMillion, 2.4);
   assert.equal(entry.actualCostUsd, 0.000004);
@@ -171,6 +172,7 @@ test("Budget Ledger summaries include only calculated actual costs", () => {
   const summary = summarizeBudgetLedgerEntries([
     {
       executionId: "exec_a",
+      projectId: "project_a",
       provider: "openai",
       model: "ledger-model",
       estimatedInputTokens: 1,
@@ -188,6 +190,7 @@ test("Budget Ledger summaries include only calculated actual costs", () => {
     },
     {
       executionId: "exec_a",
+      projectId: "project_a",
       provider: "openai",
       model: "ledger-model",
       estimatedInputTokens: 1,
@@ -207,6 +210,8 @@ test("Budget Ledger summaries include only calculated actual costs", () => {
 
   assert.equal(summary.byExecution.exec_a.entryCount, 1);
   assert.equal(summary.byExecution.exec_a.actualCostUsd, 0.00002);
+  assert.equal(summary.byProject.project_a.entryCount, 1);
+  assert.equal(summary.byProject.project_a.actualCostUsd, 0.00002);
   assert.equal(summary.byProvider.openai.entryCount, 1);
   assert.equal(summary.byModel["openai:ledger-model"].actualInputTokens, 10);
   assert.equal(summary.byProvider.anthropic.entryCount, 0);

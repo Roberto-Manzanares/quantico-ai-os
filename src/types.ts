@@ -40,6 +40,8 @@ export interface ExecutionConstraints {
   blockedProviders?: ProviderName[];
   blockedModels?: string[];
   maxCostUsd?: number;
+  maxExecutionCostUsd?: number;
+  maxProjectCostUsd?: number;
   maxInputTokens?: number;
   maxOutputTokens?: number;
   maxTotalTokens?: number;
@@ -82,6 +84,7 @@ export interface ApprovalPolicy {
 
 export interface ExecutionRequest {
   goal: string;
+  projectId?: string;
   constraints?: ExecutionConstraints;
   approvalPolicy?: ApprovalPolicy;
   contextRefs?: string[];
@@ -104,6 +107,7 @@ export interface ExecutionMetrics {
 
 export interface Execution {
   id: string;
+  projectId?: string;
   goal: string;
   taskType: TaskType;
   constraints: ExecutionConstraints;
@@ -234,6 +238,7 @@ export type BudgetLedgerCalculationStatus =
 
 export interface BudgetLedgerEntry {
   executionId: string;
+  projectId?: string;
   provider: ProviderName;
   model: string;
   estimatedInputTokens: number;
@@ -261,8 +266,26 @@ export interface BudgetLedgerTotals {
 
 export interface BudgetLedgerSummary {
   byExecution: Record<string, BudgetLedgerTotals>;
+  byProject: Record<string, BudgetLedgerTotals>;
   byProvider: Record<ProviderName, BudgetLedgerTotals>;
   byModel: Record<string, BudgetLedgerTotals>;
+}
+
+export type BudgetEnforcementDecision =
+  | "allowed"
+  | "blocked_execution_budget"
+  | "blocked_project_budget"
+  | "budget_unknown";
+
+export interface BudgetEnforcementResult {
+  decision: BudgetEnforcementDecision;
+  executionId: string;
+  projectId?: string;
+  accumulatedActualCostUsd: number | null;
+  estimatedNextCallCostUsd: number | null;
+  applicableBudgetUsd: number | null;
+  projectedCostUsd: number | null;
+  reason: string;
 }
 
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";

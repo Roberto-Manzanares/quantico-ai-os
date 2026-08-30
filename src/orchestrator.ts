@@ -13,6 +13,7 @@ import type { HumanApprovalGate } from "./components/human-approval-gate.js";
 import type { ModelRouter } from "./components/model-router.js";
 import type { StateMemory } from "./components/state-memory.js";
 import type { TokenGovernor } from "./components/token-governor.js";
+import type { BudgetEnforcementGate } from "./components/budget-enforcement.js";
 import type { BudgetLedger } from "./components/budget-ledger.js";
 import { ProviderAdapterError, type ProviderAdapter } from "./providers/provider-adapter.js";
 
@@ -23,6 +24,7 @@ export interface OrchestratorDependencies {
   stateMemory: StateMemory;
   evaluator: Evaluator;
   humanApprovalGate: HumanApprovalGate;
+  budgetEnforcementGate: BudgetEnforcementGate;
   budgetLedger: BudgetLedger;
   providers: Partial<Record<ProviderName, ProviderAdapter>>;
 }
@@ -39,6 +41,7 @@ export class Orchestrator {
     const now = new Date();
     const execution: Execution = {
       id: createExecutionId(),
+      projectId: request.projectId,
       goal: request.goal,
       taskType: determineTaskType(request.goal),
       constraints: request.constraints ?? {},
@@ -57,6 +60,7 @@ export class Orchestrator {
     await this.dependencies.stateMemory.saveExecution(execution);
     await this.appendEvent(execution, "execution_created", {
       goal: execution.goal,
+      projectId: execution.projectId,
       taskType: execution.taskType
     });
 
@@ -114,6 +118,34 @@ export class Orchestrator {
       return { execution, evaluation };
     }
 
+    const budgetDecision = await this.dependencies.budgetEnforcementGate.evaluate({
+      executionId: execution.id,
+      projectId: execution.projectId,
+      estimatedNextCallCostUsd: tokenDecision.estimatedCostUsd,
+      maxExecutionCostUsd: execution.constraints.maxExecutionCostUsd,
+      maxProjectCostUsd: execution.constraints.maxProjectCostUsd
+    });
+    await this.appendEvent(execution, "budget_enforced", { budgetDecision });
+
+    if (budgetDecision.decision !== "allowed") {
+      execution.status = "failed";
+      execution.error = {
+        code: budgetDecision.decision,
+        message: budgetDecision.reason
+      };
+      execution.updatedAt = new Date();
+      await this.dependencies.stateMemory.saveExecution(execution);
+      await this.appendEvent(execution, "execution_failed", execution.error);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision,
+        tokenDecision,
+        providerCalled: false
+      });
+      const evaluation = await this.evaluateAndPersist(execution);
+      return { execution, evaluation };
+    }
+
     const approval = await this.dependencies.humanApprovalGate.evaluateAction({
       executionId: execution.id,
       action: {
@@ -127,7 +159,8 @@ export class Orchestrator {
       metadata: {
         provider: routingDecision.provider,
         model: routingDecision.model,
-        estimatedCostUsd: tokenDecision.estimatedCostUsd
+        estimatedCostUsd: tokenDecision.estimatedCostUsd,
+        budgetDecision
       }
     });
 
@@ -197,6 +230,7 @@ export class Orchestrator {
 
     const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
       executionId: execution.id,
+      projectId: execution.projectId,
       routingDecision,
       tokenDecision,
       modelCall,
@@ -303,6 +337,7 @@ export class Orchestrator {
   }): Promise<void> {
     const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
       executionId: input.execution.id,
+      projectId: input.execution.projectId,
       routingDecision: input.routingDecision,
       tokenDecision: input.tokenDecision,
       providerCalled: input.providerCalled,

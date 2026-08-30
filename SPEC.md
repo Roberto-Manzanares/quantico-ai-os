@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada y la apertura documental de V0.4.
+Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada, V0.4 cerrada y la apertura documental de V0.5.
 
 ## Alcance Del MVP V0.1
 
@@ -588,3 +588,166 @@ V0.4 debe reutilizar State/Memory actual con archivo local estructurado. El ledg
 - Token Governor sigue usando `estimatedCostUsd` para presupuesto pre-ejecucion.
 - ProviderAdapter no cambia salvo ajustes de tipos estrictamente necesarios para usar usage ya normalizado.
 - No se agregan billing, facturacion, dashboard, cuotas, fallback, retries, scorecards, optimizacion historica, nuevos providers, cobro, markup ni alertas automaticas.
+
+## Apertura V0.5
+
+Titulo: V0.5 - Budget Enforcement.
+
+Estado de V0.4: cerrada y congelada.
+
+Commit de cierre V0.4: `2b8df9eb7d5fb8962d95bd90ebafee95295cf301`.
+
+V0.5 comienza como fase separada.
+
+### Objetivo V0.5
+
+Usar el Budget Ledger como fuente de verdad operativa para impedir nuevas llamadas cuando el gasto acumulado mas el costo estimado de la siguiente llamada exceda un limite configurado.
+
+### Alcance V0.5
+
+Incluido:
+
+- Presupuesto acumulado por ejecucion mediante `maxExecutionCostUsd` opcional.
+- Presupuesto acumulado por proyecto/configuracion local mediante `maxProjectCostUsd` opcional.
+- Asociacion minima de ledger con `projectId` o equivalente compatible con la arquitectura actual.
+- Uso de `actualCostUsd` calculado del ledger para gasto ya realizado.
+- Uso de `estimatedCostUsd` solo para la llamada futura aun no ejecutada.
+- Bloqueo antes de llamar al provider cuando el costo proyectado exceda el presupuesto aplicable.
+- Resultado auditable del gate de presupuesto.
+- Comportamiento fail-closed cuando no pueda demostrarse gasto acumulado de forma segura.
+- Integracion del gate despues de Token Governor y antes de Human Approval Gate.
+
+Fuera de alcance:
+
+- Billing.
+- Facturacion.
+- Cuotas por usuario u organizacion.
+- Dashboard.
+- Alertas automaticas.
+- Retries.
+- Fallback.
+- Scorecards.
+- Optimizacion historica.
+- Nuevos providers.
+- Cobro o markup.
+
+### Contrato Del Budget Enforcement
+
+El gate debe recibir como minimo:
+
+- `executionId`.
+- `projectId`, si aplica.
+- `estimatedNextCallCostUsd`.
+- `maxExecutionCostUsd`, si aplica.
+- `maxProjectCostUsd`, si aplica.
+- Entradas de Budget Ledger persistidas.
+
+El gate debe devolver:
+
+- `decision`: `allowed`, `blocked_execution_budget`, `blocked_project_budget`, o `budget_unknown`.
+- `executionId`.
+- `projectId`, si aplica.
+- `accumulatedActualCostUsd`.
+- `estimatedNextCallCostUsd`.
+- `applicableBudgetUsd`.
+- `projectedCostUsd`.
+- `reason`.
+
+Las decisiones deben quedar registradas como eventos auditables.
+
+### Semantica De Presupuesto
+
+Para presupuesto por ejecucion:
+
+```text
+accumulatedActualCostUsd(execution) + estimatedNextCallCostUsd <= maxExecutionCostUsd
+```
+
+Para presupuesto por proyecto:
+
+```text
+accumulatedActualCostUsd(project) + estimatedNextCallCostUsd <= maxProjectCostUsd
+```
+
+`accumulatedActualCostUsd` se calcula solo con entradas de ledger cuyo `actualCostUsd` sea calculable y cuyo `calculationStatus` sea `calculated`.
+
+`estimatedNextCallCostUsd` viene de Token Governor para la llamada individual futura, antes de llamar al provider.
+
+Budget Enforcement no reemplaza Token Governor. Token Governor valida el costo de la llamada individual; Budget Enforcement valida acumulados historicos mas la siguiente llamada estimada.
+
+### Precedencia De Gates V0.5
+
+El orden esperado del Kernel para V0.5 es:
+
+```text
+Context Compiler
+-> Model Router
+-> Token Governor
+-> Budget Enforcement
+-> Human Approval Gate
+-> Provider
+```
+
+Precedencia:
+
+1. Context Compiler construye contexto y estimacion de input tokens.
+2. Model Router selecciona provider/model con COST-FIRST.
+3. Token Governor valida limites de la llamada individual.
+4. Budget Enforcement valida acumulados por ejecucion/proyecto mas la llamada estimada.
+5. Human Approval Gate evalua riesgo y aprobacion humana.
+6. Provider se llama solo si todos los gates previos permiten continuar.
+
+### Semantica Fail-Closed
+
+El sistema debe bloquear con `budget_unknown` cuando no pueda demostrar de forma segura el gasto acumulado o el costo estimado de la siguiente llamada.
+
+Casos fail-closed:
+
+- `estimatedNextCallCostUsd` es `null` o desconocido.
+- El ledger contiene entradas aplicables con `missing_usage` o `missing_pricing` y no existe politica explicita para excluirlas.
+- No se puede leer el ledger persistido.
+- No se puede asociar una entrada al scope requerido de ejecucion o proyecto.
+
+`missing_usage` y `missing_pricing` nunca deben tratarse como costo cero silenciosamente.
+
+### Estrategia Minima Para ProjectId
+
+V0.5 debe asociar ejecuciones y entradas de ledger con un `projectId` explicito solo cuando se active presupuesto de proyecto.
+
+Si `maxProjectCostUsd` existe, `projectId` debe existir. Si falta `projectId` con presupuesto de proyecto activo, Budget Enforcement debe devolver `budget_unknown`.
+
+Si no existe `maxProjectCostUsd`, `projectId` puede seguir siendo opcional.
+
+Las entradas del ledger usadas para acumulado por proyecto deben conservar `projectId` explicito. El sistema no debe mezclar ejecuciones sin `projectId` dentro de un proyecto artificial.
+
+La asociacion debe persistirse en State/Memory y no requiere base de datos nueva.
+
+### Casos Limite V0.5
+
+- Si no se define `maxExecutionCostUsd`, no se aplica presupuesto por ejecucion.
+- Si no se define `maxProjectCostUsd`, no se aplica presupuesto por proyecto.
+- Si se define `maxProjectCostUsd` pero falta `projectId`, el gate devuelve `budget_unknown`.
+- Si ambos presupuestos existen, cualquier bloqueo debe detener la llamada.
+- Si el presupuesto por ejecucion permite pero el de proyecto bloquea, gana `blocked_project_budget`.
+- Si el presupuesto por proyecto permite pero el de ejecucion bloquea, gana `blocked_execution_budget`.
+- Si falta `estimatedNextCallCostUsd`, el gate devuelve `budget_unknown`.
+- Si hay entradas de ledger con costo real desconocido en el scope aplicable, el gate devuelve `budget_unknown`.
+- Si el acumulado real mas la siguiente llamada estimada iguala exactamente el presupuesto, la llamada puede continuar.
+- Si el acumulado real mas la siguiente llamada estimada excede el presupuesto por cualquier monto, la llamada se bloquea.
+- Si una ejecucion esta en `approval pending`, no debe crear ledger prematuro ni alterar acumulados.
+- El gate no debe llamar providers ni modificar ProviderAdapter.
+
+### Criterios De Aceptacion V0.5
+
+- Dado `maxExecutionCostUsd`, el gate bloquea antes del provider si acumulado real de ejecucion mas siguiente costo estimado excede el limite.
+- Dado `maxProjectCostUsd`, el gate bloquea antes del provider si acumulado real de proyecto mas siguiente costo estimado excede el limite.
+- Dado `maxProjectCostUsd` sin `projectId`, el gate devuelve `budget_unknown`.
+- Dado que no existe `maxProjectCostUsd`, `projectId` puede omitirse si el resto de limites permite continuar.
+- Dado un costo proyectado igual al presupuesto, el gate permite continuar.
+- Dado `estimatedNextCallCostUsd` desconocido, el gate devuelve `budget_unknown`.
+- Dadas entradas aplicables con `missing_usage` o `missing_pricing`, el gate no las trata como cero silenciosamente.
+- Dado un bloqueo de Budget Enforcement, el Provider no es llamado.
+- Cada decision registra executionId, projectId si aplica, acumulado, costo estimado siguiente, presupuesto aplicable, costo proyectado, decision y razon.
+- Budget Enforcement usa Budget Ledger como fuente de verdad para gasto acumulado.
+- Token Governor conserva autoridad sobre limites de llamada individual.
+- No se agregan billing, facturacion, cuotas por usuario u organizacion, dashboard, alertas automaticas, retries, fallback, scorecards, optimizacion historica, nuevos providers, cobro ni markup.
