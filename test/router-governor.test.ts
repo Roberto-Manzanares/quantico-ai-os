@@ -6,6 +6,8 @@ import {
   DeterministicTokenGovernor,
   OpenAIAdapter,
   AnthropicAdapter,
+  DEFAULT_MODEL_CONFIGS,
+  DEFAULT_MODEL_PRICING_TABLE,
   type CompiledContext,
   type ModelConfig,
   type ModelPricingTable,
@@ -67,11 +69,11 @@ const context: CompiledContext = {
 };
 
 test("Model Router respects an allowed preferred provider", async () => {
-  const router = new DeterministicModelRouter(modelConfigs);
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
   const decision = await router.route({
     taskType: "general",
     context,
-    constraints: { preferredProvider: "openai" },
+    constraints: { preferredProvider: "openai", expectedOutputTokens: 500 },
     estimatedInputTokens: context.estimatedTokens
   });
 
@@ -80,11 +82,11 @@ test("Model Router respects an allowed preferred provider", async () => {
 });
 
 test("Model Router never selects a blocked provider", async () => {
-  const router = new DeterministicModelRouter(modelConfigs);
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
   const decision = await router.route({
     taskType: "general",
     context,
-    constraints: { blockedProviders: ["anthropic"] },
+    constraints: { blockedProviders: ["anthropic"], expectedOutputTokens: 500 },
     estimatedInputTokens: context.estimatedTokens
   });
 
@@ -92,11 +94,11 @@ test("Model Router never selects a blocked provider", async () => {
 });
 
 test("Model Router uses task_type as a real selection signal", async () => {
-  const router = new DeterministicModelRouter(modelConfigs);
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
   const decision = await router.route({
     taskType: "coding",
     context,
-    constraints: {},
+    constraints: { expectedOutputTokens: 500 },
     requiredCapabilities: ["tool_use"],
     estimatedInputTokens: context.estimatedTokens
   });
@@ -106,11 +108,11 @@ test("Model Router uses task_type as a real selection signal", async () => {
 });
 
 test("Model Router behavior is deterministic", async () => {
-  const router = new DeterministicModelRouter(modelConfigs);
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
   const input = {
     taskType: "analysis" as const,
     context,
-    constraints: {},
+    constraints: { expectedOutputTokens: 500 },
     estimatedInputTokens: context.estimatedTokens
   };
 
@@ -118,6 +120,318 @@ test("Model Router behavior is deterministic", async () => {
   const second = await router.route(input);
 
   assert.deepEqual(first, second);
+});
+
+test("Model Router selects the lowest estimated cost compatible model", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, {
+    openai: {
+      ...pricingTable.openai,
+      "openai-general": {
+        inputUsdPerMillionTokens: 20,
+        outputUsdPerMillionTokens: 20
+      }
+    },
+    anthropic: {
+      ...pricingTable.anthropic,
+      "anthropic-analysis": {
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: 1
+      }
+    }
+  });
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.provider, "anthropic");
+  assert.equal(decision.model, "anthropic-analysis");
+  assert.equal(decision.estimatedCostUsd, 0.0015);
+  assert.match(decision.reason, /lowest estimated cost/);
+});
+
+test("Model Router rejects cheaper models incompatible with task_type", async () => {
+  const router = new DeterministicModelRouter(
+    [
+      ...modelConfigs,
+      {
+        provider: "openai",
+        model: "openai-cheap-generation",
+        taskTypes: ["generation"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 0
+      }
+    ],
+    {
+      openai: {
+        ...pricingTable.openai,
+        "openai-cheap-generation": {
+          inputUsdPerMillionTokens: 0.1,
+          outputUsdPerMillionTokens: 0.1
+        }
+      },
+      anthropic: pricingTable.anthropic
+    }
+  );
+  const decision = await router.route({
+    taskType: "analysis",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.model, "anthropic-analysis");
+});
+
+test("Model Router rejects cheaper models missing required capabilities", async () => {
+  const router = new DeterministicModelRouter(
+    [
+      ...modelConfigs,
+      {
+        provider: "anthropic",
+        model: "anthropic-cheap-coding",
+        taskTypes: ["coding"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 0
+      }
+    ],
+    {
+      openai: pricingTable.openai,
+      anthropic: {
+        ...pricingTable.anthropic,
+        "anthropic-cheap-coding": {
+          inputUsdPerMillionTokens: 0.1,
+          outputUsdPerMillionTokens: 0.1
+        }
+      }
+    }
+  );
+  const decision = await router.route({
+    taskType: "coding",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    requiredCapabilities: ["tool_use"],
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.model, "openai-coding");
+});
+
+test("Model Router lets blocked providers win over preferred providers", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: {
+      preferredProvider: "anthropic",
+      blockedProviders: ["anthropic"],
+      expectedOutputTokens: 500
+    },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.provider, "openai");
+  assert.equal(decision.model, "openai-general");
+});
+
+test("Model Router lets blocked models win over preferred models", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: {
+      preferredModel: "anthropic-analysis",
+      blockedModels: ["anthropic-analysis"],
+      expectedOutputTokens: 500
+    },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.model, "openai-general");
+});
+
+test("Model Router respects a valid preferred model as explicit override", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: { preferredModel: "anthropic-analysis", expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.provider, "anthropic");
+  assert.equal(decision.model, "anthropic-analysis");
+  assert.match(decision.reason, /preferred provider\/model/);
+});
+
+test("Model Router excludes candidates without pricing instead of treating them as zero cost", async () => {
+  const router = new DeterministicModelRouter(
+    [
+      {
+        provider: "anthropic",
+        model: "anthropic-unpriced",
+        taskTypes: ["general"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 0
+      },
+      ...modelConfigs
+    ],
+    pricingTable
+  );
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.notEqual(decision.model, "anthropic-unpriced");
+  assert.equal(decision.model, "openai-general");
+});
+
+test("Model Router fails when no compatible candidate has verifiable pricing", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, {
+    openai: {},
+    anthropic: {}
+  });
+
+  await assert.rejects(
+    () =>
+      router.route({
+        taskType: "general",
+        context,
+        constraints: { expectedOutputTokens: 500 },
+        estimatedInputTokens: context.estimatedTokens
+      }),
+    /No compatible model has verifiable pricing/
+  );
+});
+
+test("Model Router fails without configured or requested expected output tokens", async () => {
+  const router = new DeterministicModelRouter(modelConfigs, pricingTable);
+
+  await assert.rejects(
+    () =>
+      router.route({
+        taskType: "general",
+        context,
+        constraints: {},
+        estimatedInputTokens: context.estimatedTokens
+      }),
+    /No compatible model has verifiable pricing/
+  );
+});
+
+test("Model Router breaks cost ties by priority", async () => {
+  const router = new DeterministicModelRouter(
+    [
+      {
+        provider: "openai",
+        model: "openai-tie-low-priority",
+        taskTypes: ["general"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 2
+      },
+      {
+        provider: "anthropic",
+        model: "anthropic-tie-high-priority",
+        taskTypes: ["general"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 1
+      }
+    ],
+    {
+      openai: {
+        "openai-tie-low-priority": {
+          inputUsdPerMillionTokens: 1,
+          outputUsdPerMillionTokens: 1
+        }
+      },
+      anthropic: {
+        "anthropic-tie-high-priority": {
+          inputUsdPerMillionTokens: 1,
+          outputUsdPerMillionTokens: 1
+        }
+      }
+    }
+  );
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.model, "anthropic-tie-high-priority");
+});
+
+test("Model Router breaks cost and priority ties by provider:model", async () => {
+  const router = new DeterministicModelRouter(
+    [
+      {
+        provider: "openai",
+        model: "z-model",
+        taskTypes: ["general"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 1
+      },
+      {
+        provider: "anthropic",
+        model: "a-model",
+        taskTypes: ["general"],
+        capabilities: ["text_generation"],
+        latencyClass: "low",
+        priority: 1
+      }
+    ],
+    {
+      openai: {
+        "z-model": {
+          inputUsdPerMillionTokens: 1,
+          outputUsdPerMillionTokens: 1
+        }
+      },
+      anthropic: {
+        "a-model": {
+          inputUsdPerMillionTokens: 1,
+          outputUsdPerMillionTokens: 1
+        }
+      }
+    }
+  );
+  const decision = await router.route({
+    taskType: "general",
+    context,
+    constraints: { expectedOutputTokens: 500 },
+    estimatedInputTokens: context.estimatedTokens
+  });
+
+  assert.equal(decision.model, "a-model");
+});
+
+test("default economic models are configured for V0.3", () => {
+  assert.ok(DEFAULT_MODEL_CONFIGS.some((model) => model.provider === "openai" && model.model === "gpt-5-nano"));
+  assert.ok(
+    DEFAULT_MODEL_CONFIGS.some(
+      (model) => model.provider === "anthropic" && model.model === "claude-haiku-4-5-20251001"
+    )
+  );
+  assert.deepEqual(DEFAULT_MODEL_PRICING_TABLE.openai["gpt-5-nano"], {
+    inputUsdPerMillionTokens: 0.05,
+    outputUsdPerMillionTokens: 0.4
+  });
+  assert.deepEqual(DEFAULT_MODEL_PRICING_TABLE.anthropic["claude-haiku-4-5-20251001"], {
+    inputUsdPerMillionTokens: 1,
+    outputUsdPerMillionTokens: 5
+  });
 });
 
 test("Token Governor uses configurable pricing and calculates expected cost", async () => {

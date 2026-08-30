@@ -18,7 +18,7 @@ import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
 import { SkeletonModelRouter } from "./components/model-router.js";
 import { FileStateMemory } from "./components/state-memory.js";
 import { SkeletonTokenGovernor } from "./components/token-governor.js";
-import type { ModelConfig, ModelPricingTable } from "./config/model-config.js";
+import { DEFAULT_MODEL_PRICING_TABLE, type ModelConfig, type ModelPricingTable } from "./config/model-config.js";
 import { Orchestrator } from "./orchestrator.js";
 import { AnthropicAdapter } from "./providers/anthropic-adapter.js";
 import { OpenAIAdapter } from "./providers/openai-adapter.js";
@@ -35,8 +35,9 @@ export interface QuanticoSystemOptions {
 export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   const stateMemory = new FileStateMemory(options.stateFilePath);
   const contextCompiler = new SkeletonContextCompiler();
-  const modelRouter = new SkeletonModelRouter(options.modelConfigs);
-  const tokenGovernor = new SkeletonTokenGovernor(options.pricingTable);
+  const pricingTable = options.pricingTable ?? DEFAULT_MODEL_PRICING_TABLE;
+  const modelRouter = new SkeletonModelRouter(options.modelConfigs, pricingTable);
+  const tokenGovernor = new SkeletonTokenGovernor(pricingTable);
   const humanApprovalGate = new SkeletonHumanApprovalGate();
   const evaluator = new SkeletonEvaluator();
   const providers = options.providers ?? {

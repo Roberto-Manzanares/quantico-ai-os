@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.2 validated.
+Fase: V0.3 validated.
 
-Version objetivo: V0.2.
+Version objetivo: V0.3.
 
 Codigo implementado: si.
 
-Estado actual: V0.2 validated.
+Estado actual: V0.3 validada con ejecucion real COST-FIRST.
 
-Ultimo hito: ejecucion real exitosa del Kernel contra Anthropic.
+Ultimo hito: validacion real del Router COST-FIRST end-to-end.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 56/56 pass.
+Tests actuales: 68/68 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -42,11 +42,17 @@ Commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
 
 V0.1: cerrada y congelada.
 
-V0.2: validada contra Anthropic real.
+V0.2: cerrada y congelada.
+
+Commit de cierre V0.2: `5906331bbe82f08911a8670c30e5cdc941230172`.
 
 Objetivo V0.2: validacion real Anthropic y paridad multi-provider.
 
 Restriccion de diseno V0.2: COST-FIRST POLICY.
+
+V0.3: cerrada y congelada.
+
+Objetivo V0.3: COST-FIRST Router real.
 
 Defaults economicos V0.2:
 
@@ -146,11 +152,31 @@ La validacion confirmo:
 - Soporte opcional de `ANTHROPIC_WORKSPACE_ID` para API keys identity-linked.
 - Diagnostico seguro Anthropic sin imprimir secretos.
 
+## Cierre V0.3
+
+V0.3 queda cerrada despues de validar una ejecucion real satisfactoria del Kernel con Router COST-FIRST.
+
+La validacion confirmo:
+
+- Execution ID: `exec_mtf5gevi`.
+- Provider/model seleccionado: OpenAI / `gpt-5-nano`.
+- Costo estimado candidato OpenAI `gpt-5-nano`: $0.000018.
+- Costo estimado candidato Anthropic `claude-haiku-4-5-20251001`: $0.000262.
+- Input/output tokens reales: 127 / 24.
+- Estado final: `succeeded`.
+- Evaluacion: `pass`.
+- Latencia: 2240ms.
+- Provider calls: OpenAI 1 / Anthropic 0.
+
+`estimatedCostUsd` representa el costo pre-ejecucion usado por Model Router y Token Governor para seleccionar y validar presupuesto. No representa un recalculo posterior basado en usage real.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir el objetivo de la siguiente fase antes de tocar codigo.
+- Definir objetivo concreto de V0.4 antes de tocar codigo.
+- Mantener Router COST-FIRST con pricing configurado y verificable.
+- Mantener Token Governor como autoridad final de presupuesto.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
-- No implementar fallback inteligente, scorecards, retries automaticos ni nuevos providers sin una decision separada.
+- No implementar fallback automatico, scorecards, retries automaticos, routing historico ni nuevos providers sin decision documental previa.
 
 ## Criterio De Cierre V0.2
 
@@ -174,6 +200,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - Existe commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
 - V0.2 declara objetivo, alcance y criterio de cierre antes de tocar codigo.
 - V0.2 queda validada contra Anthropic real con estado `succeeded` y evaluacion `pass`.
+- V0.3 declara objetivo, alcance, algoritmo, precedencia y casos limite antes de tocar codigo.
+- V0.3 queda validada con Router COST-FIRST real seleccionando OpenAI `gpt-5-nano` sobre Anthropic `claude-haiku-4-5-20251001` por menor costo estimado compatible.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

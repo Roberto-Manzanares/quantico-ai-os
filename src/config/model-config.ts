@@ -7,6 +7,7 @@ export interface ModelConfig {
   capabilities: ModelCapability[];
   latencyClass: "low" | "medium" | "high" | "unknown";
   priority: number;
+  defaultExpectedOutputTokens?: number;
 }
 
 export interface ModelPricing {
@@ -19,19 +20,21 @@ export type ModelPricingTable = Record<ProviderName, Record<string, ModelPricing
 export const DEFAULT_MODEL_CONFIGS: ModelConfig[] = [
   {
     provider: "openai",
-    model: "gpt-4.1-mini",
+    model: "gpt-5-nano",
     taskTypes: ["coding", "generation", "general", "evaluation"],
-    capabilities: ["text_generation", "tool_use"],
+    capabilities: ["text_generation"],
     latencyClass: "low",
-    priority: 10
+    priority: 10,
+    defaultExpectedOutputTokens: 256
   },
   {
     provider: "anthropic",
-    model: "claude-3-5-haiku-latest",
+    model: "claude-haiku-4-5-20251001",
     taskTypes: ["research", "analysis", "general", "evaluation"],
     capabilities: ["text_generation", "long_context"],
     latencyClass: "low",
-    priority: 20
+    priority: 20,
+    defaultExpectedOutputTokens: 256
   },
   {
     provider: "openai",
@@ -54,4 +57,19 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfig[] = [
 export const EMPTY_PRICING_TABLE: ModelPricingTable = {
   openai: {},
   anthropic: {}
+};
+
+export const DEFAULT_MODEL_PRICING_TABLE: ModelPricingTable = {
+  openai: {
+    "gpt-5-nano": {
+      inputUsdPerMillionTokens: 0.05,
+      outputUsdPerMillionTokens: 0.4
+    }
+  },
+  anthropic: {
+    "claude-haiku-4-5-20251001": {
+      inputUsdPerMillionTokens: 1,
+      outputUsdPerMillionTokens: 5
+    }
+  }
 };

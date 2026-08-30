@@ -246,3 +246,83 @@ Criterios de aceptacion:
 - Token Governor bloquea la ejecucion si falta pricing para provider/model.
 - El sistema registra costo estimado y costo real disponible por ejecucion.
 - No se agregan retries automaticos ni escalamiento automatico a modelos mas caros.
+
+## Decision 011: V0.3 Implementa COST-FIRST Router Real
+
+Estado: aceptada.
+
+Decision:
+
+V0.3 implementa seleccion real COST-FIRST en Model Router: entre modelos compatibles, no bloqueados y con pricing verificable, se selecciona el menor costo estimado.
+
+Razon:
+
+V0.1 y V0.2 validaron el Kernel real con OpenAI y Anthropic bajo el mismo contrato. El siguiente valor operacional es convertir la politica COST-FIRST documentada en comportamiento determinista del Router.
+
+Consecuencia:
+
+El Router debe considerar primero `task_type` y capacidades requeridas, despues bloqueos, despues overrides explicitos y finalmente costo estimado.
+
+Los precios deben venir de configuracion. Un candidato sin pricing no puede ser tratado como costo cero.
+
+`preferredProvider` y `preferredModel` siguen funcionando como overrides explicitos si el candidato es compatible, tiene pricing verificable y no esta bloqueado.
+
+`blockedProviders` y `blockedModels` tienen prioridad sobre cualquier preferencia.
+
+Token Governor conserva la validacion final de `maxCostUsd` antes de ejecutar.
+
+No se agregan fallback automatico, retries, Provider Scorecard, routing por calidad historica, nuevos providers, dashboard ni cambios al contrato `ProviderAdapter`.
+
+Defaults economicos V0.3:
+
+- OpenAI: `gpt-5-nano`.
+- Anthropic: `claude-haiku-4-5-20251001`.
+
+Criterios de aceptacion:
+
+- El Router selecciona el menor costo estimado entre candidatos compatibles con pricing conocido.
+- El Router descarta candidatos incompatibles con `task_type` o capacidades requeridas antes de comparar costo.
+- El Router nunca selecciona providers o modelos bloqueados.
+- El Router respeta preferencias explicitas solo si siguen siendo validas y no bloqueadas.
+- El Router no interpreta pricing faltante como costo cero.
+- El Router falla con razon verificable si ningun candidato compatible tiene pricing.
+- El desempate es determinista por `priority` y luego `provider:model`.
+- Token Governor sigue aplicando `maxCostUsd` antes de cada llamada.
+
+## Decision 012: V0.3 Cierra COST-FIRST Con Validacion Real
+
+Estado: aceptada.
+
+Decision:
+
+V0.3 queda cerrada despues de una ejecucion real end-to-end donde el Router COST-FIRST selecciono automaticamente OpenAI `gpt-5-nano` frente a Anthropic `claude-haiku-4-5-20251001` por menor costo estimado compatible.
+
+Razon:
+
+La validacion demostro que el Kernel puede comparar candidatos configurados, aplicar pricing verificable, seleccionar el modelo mas barato compatible y ejecutar solo el provider ganador sin fallback, retries ni escalamiento.
+
+Evidencia:
+
+- Execution ID: `exec_mtf5gevi`.
+- Candidato OpenAI `gpt-5-nano`: $0.000018 estimado.
+- Candidato Anthropic `claude-haiku-4-5-20251001`: $0.000262 estimado.
+- Provider/model seleccionado: OpenAI / `gpt-5-nano`.
+- Input/output tokens reales: 127 / 24.
+- Estado final: `succeeded`.
+- Evaluacion: `pass`.
+- Latencia: 2240ms.
+- Provider calls: OpenAI 1 / Anthropic 0.
+
+Consecuencia:
+
+`estimatedCostUsd` queda definido para esta fase como el costo pre-ejecucion usado por Model Router y Token Governor para seleccion y validacion de presupuesto. No es el costo recalculado desde usage real.
+
+El Router COST-FIRST queda validado como comportamiento real de V0.3 y no introduce cambios al contrato `ProviderAdapter`.
+
+Criterios de aceptacion:
+
+- La seleccion automatica favorece el menor costo estimado compatible.
+- El provider perdedor no recibe llamadas.
+- Token Governor valida el presupuesto antes de ejecutar.
+- Evaluator produce `pass` con criterios deterministas verificables.
+- State/Memory registra estado, metricas y resultado sin secretos.

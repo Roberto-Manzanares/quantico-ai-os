@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 cerrado y la apertura documental de V0.2.
+Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada y la apertura documental de V0.3.
 
 ## Alcance Del MVP V0.1
 
@@ -347,3 +347,97 @@ Presupuestos smoke:
 - El contrato `ProviderAdapter` no cambia.
 - El runner manual `npm run smoke:anthropic` queda separado de los tests unitarios.
 - No se agregan fallback inteligente, scorecards, retries automaticos, dashboard ni nuevos providers.
+
+## Apertura V0.3
+
+Estado de V0.1: cerrada y congelada.
+
+Estado de V0.2: cerrada y congelada.
+
+Commit de cierre V0.2: `5906331bbe82f08911a8670c30e5cdc941230172`.
+
+V0.3 comienza como fase separada.
+
+### Objetivo V0.3
+
+Implementar COST-FIRST Router real.
+
+### Alcance V0.3
+
+Incluido:
+
+- Model Router selecciona el modelo de menor costo estimado entre modelos compatibles.
+- Los precios usados por el Router deben venir de configuracion verificable, nunca de valores inventados.
+- El Router considera capacidades requeridas y `task_type` antes del costo.
+- `preferredProvider` y `preferredModel` siguen siendo overrides explicitos.
+- `blockedProviders` y `blockedModels` siguen teniendo prioridad sobre cualquier preferencia.
+- Si no existe pricing verificable para un candidato, no se trata como costo cero.
+- El desempate del Router debe ser determinista.
+- Defaults economicos actualizados:
+  - OpenAI: `gpt-5-nano`.
+  - Anthropic: `claude-haiku-4-5-20251001`.
+- Token Governor conserva limites de presupuesto antes de cada llamada.
+
+Fuera de alcance:
+
+- Fallback automatico.
+- Retries.
+- Provider Scorecard.
+- Routing basado en calidad historica.
+- Nuevos providers.
+- Dashboard.
+- Cambios de `ProviderAdapter`.
+
+### Algoritmo COST-FIRST Propuesto
+
+1. Recibir `task_type`, capacidades requeridas, contexto compilado, tokens estimados, restricciones y tabla de precios.
+2. Filtrar modelos que no soporten el `task_type`.
+3. Filtrar modelos que no soporten capacidades requeridas.
+4. Aplicar `blockedProviders` y `blockedModels`.
+5. Si existe `preferredProvider` o `preferredModel` y el candidato preferido sigue siendo valido, seleccionarlo como override explicito.
+6. Excluir candidatos sin pricing verificable para el calculo COST-FIRST.
+7. Calcular costo estimado por candidato usando input tokens estimados y output tokens esperados.
+8. Seleccionar el candidato de menor costo estimado.
+9. Resolver empates de forma determinista por prioridad configurada y luego por clave estable `provider:model`.
+10. Registrar razon auditable con filtros aplicados, costo estimado y criterio de desempate cuando aplique.
+
+### Orden De Precedencia Del Router V0.3
+
+1. Compatibilidad con `task_type`.
+2. Compatibilidad con capacidades requeridas.
+3. Bloqueos explicitos: `blockedProviders` y `blockedModels`.
+4. Overrides explicitos: `preferredProvider` y `preferredModel`, solo si el candidato sigue siendo compatible y no bloqueado.
+5. Pricing verificable.
+6. Menor costo estimado.
+7. Desempate determinista por `priority`.
+8. Desempate final por `provider:model`.
+
+### Casos Limite V0.3
+
+- Si todos los candidatos compatibles estan bloqueados, el Router debe fallar con razon verificable.
+- Si el proveedor preferido esta bloqueado, el bloqueo gana.
+- Si el modelo preferido esta bloqueado, el bloqueo gana.
+- Si el proveedor/modelo preferido no soporta el `task_type`, no se selecciona.
+- Si el proveedor/modelo preferido no soporta capacidades requeridas, no se selecciona.
+- Si un candidato no tiene pricing verificable, no participa como opcion COST-FIRST.
+- Si ningun candidato compatible tiene pricing verificable, no se debe seleccionar un modelo como si costo fuera cero.
+- Si dos candidatos tienen el mismo costo estimado, gana el de menor `priority`.
+- Si dos candidatos empatan en costo y prioridad, gana el orden lexicografico estable `provider:model`.
+- Si `expectedOutputTokens` no esta definido, el Router debe usar un valor estimable definido por configuracion o por constraints existentes, no inventar costo cero.
+- Token Governor sigue siendo la autoridad final para bloquear por `maxCostUsd`.
+
+### Criterios De Aceptacion V0.3
+
+- Dado un conjunto de modelos compatibles con pricing conocido, el Router selecciona el menor costo estimado.
+- Dado un candidato mas barato pero incompatible con `task_type`, el Router no lo selecciona.
+- Dado un candidato mas barato pero sin capacidad requerida, el Router no lo selecciona.
+- Dado un provider o modelo bloqueado, el Router nunca lo selecciona.
+- Dado un `preferredProvider` valido, compatible, con pricing y no bloqueado, el Router lo selecciona como override explicito.
+- Dado un `preferredModel` valido, compatible, con pricing y no bloqueado, el Router lo selecciona como override explicito.
+- Dado un candidato sin pricing, el Router no lo trata como costo cero.
+- Dado que ningun candidato compatible tiene pricing, el Router falla antes de ejecutar.
+- Dado empate de costo, el resultado es determinista por `priority` y `provider:model`.
+- Los defaults economicos configurados para tareas simples son `gpt-5-nano` y `claude-haiku-4-5-20251001`.
+- Token Governor conserva validacion de `maxCostUsd` antes de cada llamada.
+- No se modifican `ProviderAdapter`, Provider Adapters, Evaluator, Human Approval Gate ni State/Memory para cumplir V0.3.
+- No se agregan fallback automatico, retries, scorecards, routing historico, dashboard ni nuevos providers.
