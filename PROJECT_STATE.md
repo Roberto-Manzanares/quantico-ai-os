@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.5 validated.
+Fase: V0.6 ready to close.
 
-Version objetivo: V0.5.
+Version objetivo: V0.6.
 
 Codigo implementado: si.
 
-Estado actual: V0.5 validada con dry-run verificable.
+Estado actual: V0.6 implementada y validada por dry-run.
 
-Ultimo hito: implementacion y dry-run de Budget Enforcement.
+Ultimo hito: dry-run final de Provider Scorecard minimo.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 87/87 pass.
+Tests actuales: 92/92 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -69,6 +69,14 @@ V0.5: cerrada y congelada.
 Titulo V0.5: Budget Enforcement.
 
 Objetivo V0.5: usar el Budget Ledger como fuente de verdad operativa para impedir nuevas llamadas cuando el gasto acumulado mas el costo estimado de la siguiente llamada exceda un limite configurado.
+
+Commit de cierre V0.5: `3c07c85634c27dc9c72311d5a973e3d17a01f5f2`.
+
+V0.6: implementada y validada por dry-run.
+
+Titulo V0.6: Provider Scorecard minimo.
+
+Objetivo V0.6: observar y resumir desempeno por provider/model usando solo datos operacionales existentes, sin cambiar decisiones de routing.
 
 Defaults economicos V0.2:
 
@@ -222,9 +230,33 @@ La validacion confirmo:
 - Provider calls en bloqueos y `budget_unknown`: 0.
 - Tests: 87/87 pass.
 
+## Cierre V0.6
+
+V0.6 queda lista para cierre despues de implementar y validar por dry-run el Provider Scorecard minimo.
+
+La validacion sintetica confirmo:
+
+- 2 ejecuciones OpenAI / `gpt-5-nano`.
+- 2 ejecuciones Anthropic / `claude-haiku-4-5-20251001`.
+- Mezcla de estados `succeeded` y `failed`.
+- Mezcla de evaluaciones `pass` y `fail`.
+- Costos y latencias distintas.
+- 1 registro con costo faltante para forzar `dataQuality` `partial`.
+
+Resultados del dry-run:
+
+- `openai:gpt-5-nano`: 2 ejecuciones, 1 `succeeded`, 1 `failed`, 1 `pass`, 1 `fail`.
+- `openai:gpt-5-nano`: `totalActualCostUsd` 0.000036, `averageActualCostUsd` 0.000018, `averageLatencyMs` 2000.
+- `openai:gpt-5-nano`: `lastUpdatedAt` `2026-08-30T12:01:00.000Z`, `dataQuality` `complete`.
+- `anthropic:claude-haiku-4-5-20251001`: 2 ejecuciones, 1 `succeeded`, 1 `failed`, 1 `pass`, 1 `fail`.
+- `anthropic:claude-haiku-4-5-20251001`: `totalActualCostUsd` 0.000295, `averageActualCostUsd` 0.000295, `averageLatencyMs` 1220.5.
+- `anthropic:claude-haiku-4-5-20251001`: `lastUpdatedAt` `2026-08-30T12:03:00.000Z`, `dataQuality` `partial`.
+- Separacion por `provider:model` verificada.
+- Tests: 92/92 pass.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir objetivo concreto de V0.6 antes de tocar codigo.
+- Definir V0.7 documentalmente antes de tocar codigo.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
 - Mantener `maxExecutionCostUsd` y `maxProjectCostUsd` como presupuestos acumulados opcionales.
 - Mantener `projectId` explicito obligatorio cuando `maxProjectCostUsd` este activo.
@@ -234,8 +266,9 @@ La validacion confirmo:
 - Mantener ledger auditable por ejecucion, provider y modelo.
 - Mantener Router COST-FIRST con pricing configurado y verificable.
 - Mantener Token Governor como autoridad final de presupuesto.
+- Mantener Provider Scorecard como observador; no decide ni cambia Router COST-FIRST.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
-- No implementar billing, facturacion, cuotas por usuario u organizacion, fallback automatico, scorecards, retries automaticos, routing historico, alertas automaticas ni nuevos providers en V0.5.
+- No implementar aprendizaje automatico, ranking opaco, fallback automatico, retries, dashboard, routing historico, alertas automaticas ni nuevos providers sin decision explicita.
 
 ## Criterio De Cierre V0.2
 
@@ -265,6 +298,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.4 queda validada con dry-run verificable de Budget Ledger, costo real, delta, snapshots historicos y acumulados persistibles.
 - V0.5 declara contrato de Budget Enforcement, precedencia de gates, fail-closed, casos limite y estrategia minima de projectId antes de tocar codigo.
 - V0.5 queda validada con dry-run verificable de Budget Enforcement, bloqueos acumulados, fail-closed y cero llamadas a provider en bloqueos.
+- V0.6 declara contrato de Provider Scorecard minimo, agregados, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.6 queda validada con dry-run verificable de Provider Scorecard, agregados por provider/model, `dataQuality` parcial y 92/92 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

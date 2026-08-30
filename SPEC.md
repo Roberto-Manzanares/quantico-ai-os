@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada, V0.4 cerrada y la apertura documental de V0.5.
+Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada, V0.4 cerrada, V0.5 cerrada y la apertura documental de V0.6.
 
 ## Alcance Del MVP V0.1
 
@@ -751,3 +751,120 @@ La asociacion debe persistirse en State/Memory y no requiere base de datos nueva
 - Budget Enforcement usa Budget Ledger como fuente de verdad para gasto acumulado.
 - Token Governor conserva autoridad sobre limites de llamada individual.
 - No se agregan billing, facturacion, cuotas por usuario u organizacion, dashboard, alertas automaticas, retries, fallback, scorecards, optimizacion historica, nuevos providers, cobro ni markup.
+
+## Apertura V0.6
+
+Titulo: V0.6 - Provider Scorecard minimo.
+
+Estado de V0.5: cerrada y congelada.
+
+Commit de cierre V0.5: `3c07c85634c27dc9c72311d5a973e3d17a01f5f2`.
+
+V0.6 comienza como fase separada.
+
+### Objetivo V0.6
+
+Crear un Provider Scorecard minimo que observe y resuma desempeno por provider/model usando solo datos operacionales ya existentes.
+
+### Alcance V0.6
+
+Incluido:
+
+- Scorecard por provider/model.
+- Uso exclusivo de datos ya existentes:
+  - `actualCostUsd`.
+  - `latencyMs`.
+  - Estado final de ejecucion.
+  - `evaluationStatus`.
+- Metricas simples, explicitas y auditables.
+- Agregados por provider/model.
+- Persistencia o derivacion compatible con State/Memory actual.
+- Scorecard como observador y resumen, no como decisor.
+
+Fuera de alcance:
+
+- Aprendizaje automatico.
+- Ranking opaco.
+- Cambios al Router COST-FIRST.
+- Llamadas adicionales a providers.
+- Fallback.
+- Retries.
+- Dashboard.
+- Scorecards que modifiquen decisiones de routing.
+- Optimizacion historica automatica.
+- Nuevos providers.
+
+### Contrato Del Provider Scorecard
+
+El Scorecard debe recibir o derivar registros operacionales con:
+
+- `provider`.
+- `model`.
+- `actualCostUsd`.
+- `latencyMs`.
+- Estado final de ejecucion.
+- `evaluationStatus`.
+- `executionId`.
+- `timestamp`, si esta disponible.
+
+El Scorecard debe devolver agregados por `provider/model`:
+
+- `provider`.
+- `model`.
+- `executionCount`.
+- `successCount`.
+- `failureCount`.
+- `needsHumanCount`.
+- `evaluationPassCount`.
+- `evaluationFailCount`.
+- `evaluationNeedsReviewCount`.
+- `totalActualCostUsd`.
+- `averageActualCostUsd`.
+- `averageLatencyMs`.
+- `lastUpdatedAt`, si existe informacion temporal.
+- `dataQuality`: `complete` o `partial`.
+- `reason`, cuando el scorecard sea parcial.
+
+### Agregados V0.6
+
+Los agregados deben calcularse de forma deterministica:
+
+- `executionCount`: numero de ejecuciones o llamadas observables para provider/model.
+- `successCount`: ejecuciones con estado final `succeeded`.
+- `failureCount`: ejecuciones con estado final `failed` o `cancelled`.
+- `needsHumanCount`: ejecuciones con estado final `needs_human` o `awaiting_approval`.
+- `evaluationPassCount`: evaluaciones `pass`.
+- `evaluationFailCount`: evaluaciones `fail`.
+- `evaluationNeedsReviewCount`: evaluaciones `needs_review`.
+- `totalActualCostUsd`: suma de `actualCostUsd` calculable.
+- `averageActualCostUsd`: promedio sobre entradas con costo real calculable.
+- `averageLatencyMs`: promedio sobre entradas con latencia disponible.
+
+### Semantica
+
+El Provider Scorecard solo observa y resume. No decide proveedor, no cambia el orden de routing, no altera COST-FIRST y no puede generar llamadas adicionales.
+
+Las metricas deben ser explicables desde entradas persistidas. Si falta informacion suficiente para una metrica, el scorecard debe marcar `dataQuality` como `partial` y registrar razon verificable.
+
+### Casos Limite V0.6
+
+- Si no hay datos para un provider/model, no se debe inventar score.
+- Si falta `actualCostUsd`, esa entrada no participa en promedios o totales de costo.
+- Si falta `latencyMs`, esa entrada no participa en promedio de latencia.
+- Si falta `evaluationStatus`, los contadores de evaluacion deben marcarse como parciales.
+- Si el estado final no es terminal, el scorecard puede contar `needsHumanCount` cuando aplique, pero debe indicar que el dato operativo puede seguir cambiando.
+- Si dos providers tienen metricas similares, V0.6 no resuelve empates ni cambia routing.
+- Si una metrica se basa en pocos datos, V0.6 no debe extrapolar calidad futura.
+
+### Criterios De Aceptacion V0.6
+
+- Dadas ejecuciones persistidas con provider/model, el Scorecard produce agregados por provider/model.
+- El Scorecard calcula conteos de estado final de forma deterministica.
+- El Scorecard calcula conteos de evaluacion de forma deterministica.
+- El Scorecard calcula costo total y promedio usando solo `actualCostUsd` disponible.
+- El Scorecard calcula latencia promedio usando solo `latencyMs` disponible.
+- El Scorecard marca `partial` cuando faltan datos necesarios.
+- El Scorecard no ejecuta providers ni genera llamadas adicionales.
+- El Scorecard no modifica Model Router, Token Governor, Budget Enforcement ni ProviderAdapter.
+- El Router COST-FIRST sigue siendo la autoridad de seleccion automatica.
+- No se agregan aprendizaje automatico, ranking opaco, fallback, retries, dashboard, optimizacion historica automatica ni nuevos providers.

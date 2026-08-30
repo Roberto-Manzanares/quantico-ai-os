@@ -511,3 +511,86 @@ Criterios de aceptacion:
 - Presupuesto de proyecto sin `projectId` falla cerrado con `budget_unknown`.
 - Usage/pricing desconocido aplicable falla cerrado con `budget_unknown`.
 - Los bloqueos y estados `budget_unknown` no llaman providers.
+
+## Decision 017: V0.6 Abre Provider Scorecard Minimo
+
+Estado: aceptada.
+
+Decision:
+
+V0.6 se abre como fase separada para crear un Provider Scorecard minimo que observe y resuma desempeno por provider/model.
+
+Razon:
+
+V0.5 ya controla presupuesto acumulado antes de llamar providers. El siguiente paso util es hacer visible la evidencia operacional acumulada sin permitir todavia que esa evidencia modifique decisiones automaticas de routing.
+
+Consecuencia:
+
+El Scorecard usara solo datos existentes:
+
+- `actualCostUsd`.
+- `latencyMs`.
+- Estado final.
+- `evaluationStatus`.
+
+El Scorecard agrupara por provider/model y producira metricas simples, deterministicas y auditables:
+
+- Conteos de ejecucion por estado.
+- Conteos de evaluacion.
+- Costo real total y promedio cuando exista.
+- Latencia promedio cuando exista.
+- Calidad de datos `complete` o `partial`.
+
+El Scorecard solo observa y resume. No decide provider/model, no cambia Router COST-FIRST, no genera llamadas adicionales, no ejecuta fallback, no hace retries y no introduce dashboard.
+
+Quedan fuera aprendizaje automatico, ranking opaco, scorecards que influyan en routing, optimizacion historica automatica, nuevos providers y cualquier llamada adicional.
+
+Criterios de aceptacion:
+
+- El Scorecard produce agregados por provider/model desde datos persistidos.
+- Las metricas se calculan solo con datos disponibles y verificables.
+- La falta de datos marca `partial` con razon auditable.
+- El Router COST-FIRST permanece como autoridad de seleccion automatica.
+- No se modifican ProviderAdapter, Token Governor, Budget Enforcement ni providers.
+
+## Decision 018: V0.6 Cierra Provider Scorecard Minimo Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.6 queda cerrada despues de implementar y validar por dry-run el Provider Scorecard minimo como capa de observabilidad por provider/model.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede resumir evidencia operacional existente sin alterar Router COST-FIRST ni generar llamadas adicionales.
+
+Evidencia:
+
+- OpenAI / `gpt-5-nano`: 2 ejecuciones sinteticas.
+- Anthropic / `claude-haiku-4-5-20251001`: 2 ejecuciones sinteticas.
+- Mezcla de estados `succeeded` y `failed`.
+- Mezcla de evaluaciones `pass` y `fail`.
+- Costos y latencias distintas.
+- 1 registro con costo faltante para confirmar `dataQuality` `partial`.
+- Separacion por `provider:model` verificada.
+- Tests: 92/92 pass.
+
+Resultados:
+
+- `openai:gpt-5-nano`: `successCount` 1, `failureCount` 1, `evaluationPassCount` 1, `evaluationFailCount` 1.
+- `openai:gpt-5-nano`: `totalActualCostUsd` 0.000036, `averageActualCostUsd` 0.000018, `averageLatencyMs` 2000, `dataQuality` `complete`.
+- `anthropic:claude-haiku-4-5-20251001`: `successCount` 1, `failureCount` 1, `evaluationPassCount` 1, `evaluationFailCount` 1.
+- `anthropic:claude-haiku-4-5-20251001`: `totalActualCostUsd` 0.000295, `averageActualCostUsd` 0.000295, `averageLatencyMs` 1220.5, `dataQuality` `partial`.
+
+Consecuencia:
+
+Provider Scorecard queda disponible como observador minimo y auditable. No decide routing, no modifica COST-FIRST, no ejecuta providers, no hace fallback, no hace retries y no introduce dashboard.
+
+Criterios de aceptacion:
+
+- El Scorecard agrupa correctamente por provider/model.
+- Los conteos por estado final y `evaluationStatus` son deterministas.
+- Costo total/promedio y latencia promedio usan solo datos disponibles.
+- La falta de datos marca `dataQuality` `partial` con razon auditable.
+- No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.

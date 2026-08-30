@@ -288,6 +288,30 @@ export interface BudgetEnforcementResult {
   reason: string;
 }
 
+export type ProviderScorecardDataQuality = "complete" | "partial";
+
+export interface ProviderScorecardAggregate {
+  provider: ProviderName;
+  model: string;
+  executionCount: number;
+  successCount: number;
+  failureCount: number;
+  needsHumanCount: number;
+  evaluationPassCount: number;
+  evaluationFailCount: number;
+  evaluationNeedsReviewCount: number;
+  totalActualCostUsd: number;
+  averageActualCostUsd: number | null;
+  averageLatencyMs: number | null;
+  lastUpdatedAt?: Date;
+  dataQuality: ProviderScorecardDataQuality;
+  reason?: string;
+}
+
+export interface ProviderScorecardSummary {
+  byModel: Record<string, ProviderScorecardAggregate>;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
