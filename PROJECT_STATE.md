@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.7 ready to close.
+Fase: V0.8 ready to close.
 
-Version objetivo: V0.7.
+Version objetivo: V0.8.
 
 Codigo implementado: si.
 
-Estado actual: V0.7 implementada y validada por dry-run.
+Estado actual: V0.8 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Provider Scorecard Read API.
+Ultimo hito: dry-run final de Shadow Routing Advisor.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 96/96 pass.
+Tests actuales: 106/106 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -85,6 +85,14 @@ V0.7: implementada y validada por dry-run.
 Titulo V0.7: Provider Scorecard Read API.
 
 Objetivo V0.7: exponer el Provider Scorecard minimo mediante API y/o CLI read-only para inspeccion auditable sin cambiar Router COST-FIRST.
+
+Commit de cierre V0.7: `c027fe81fe395c8f58f1af929d5e625ef83c2a3b`.
+
+V0.8: implementada y validada por dry-run.
+
+Titulo V0.8: Shadow Routing Advisor.
+
+Objetivo V0.8: comparar la decision real del Router COST-FIRST contra una recomendacion historica derivada solo del Provider Scorecard, sin autoridad de routing.
 
 Defaults economicos V0.2:
 
@@ -283,9 +291,30 @@ Resultados del dry-run:
 - `anthropic:claude-haiku-4-5-20251001`: 2 ejecuciones, 1 `succeeded`, 1 `failed`, 1 `pass`, 1 `fail`.
 - `anthropic:claude-haiku-4-5-20251001`: `totalActualCostUsd` 0.000295, `averageActualCostUsd` 0.000295, `averageLatencyMs` 1220.5, `dataQuality` `partial`.
 
+## Cierre V0.8
+
+V0.8 queda lista para cierre despues de implementar y validar por dry-run el Shadow Routing Advisor.
+
+La validacion confirmo:
+
+- Match entre seleccion COST-FIRST y recomendacion shadow verificado.
+- Divergence entre seleccion COST-FIRST y recomendacion shadow verificado.
+- Exclusion por dataQuality insuficiente verificada.
+- Precedencia deterministica verificada:
+  - evaluation pass rate.
+  - success rate.
+  - cost.
+  - latency.
+  - provider:model.
+- Razones y metricas auditables verificadas.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls: 0.
+- Tests: 106/106 pass.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.8 documentalmente antes de tocar codigo.
+- Definir V0.9 documentalmente antes de tocar codigo.
 - Mantener Router COST-FIRST sin cambios.
 - No agregar ranking automatico, fallback ni retries.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
@@ -333,6 +362,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.6 queda validada con dry-run verificable de Provider Scorecard, agregados por provider/model, `dataQuality` parcial y 92/92 tests.
 - V0.7 declara contrato de Provider Scorecard Read API, consulta por provider/model, listado agregado, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.7 queda validada con dry-run verificable de Provider Scorecard Read API, consulta `found`, consulta `not_found`, lectura read-only y 96/96 tests.
+- V0.8 declara contrato de Shadow Routing Advisor, comparacion contra Router COST-FIRST, reglas deterministicas, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.8 queda validada con dry-run verificable de Shadow Routing Advisor, match/divergence, precedencia deterministica, `advisorAuthority` `none`, cero provider calls y 106/106 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

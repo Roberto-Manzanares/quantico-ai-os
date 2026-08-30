@@ -324,6 +324,47 @@ export type ProviderScorecardLookupResult =
       reason: string;
     };
 
+export type ShadowAdvisorDataQuality = ProviderScorecardDataQuality | "insufficient_data";
+
+export interface ShadowAdvisorSelection {
+  provider: ProviderName;
+  model: string;
+  estimatedCostUsd: number | null;
+  reason: string;
+}
+
+export interface ShadowAdvisorMetricsUsed {
+  executionCount: number;
+  evaluationPassCount: number;
+  evaluationPassRate: number;
+  successCount: number;
+  successRate: number;
+  averageActualCostUsd: number | null;
+  averageLatencyMs: number | null;
+  scorecardDataQuality: ProviderScorecardDataQuality;
+}
+
+export interface ShadowAdvisorRecommendation {
+  provider: ProviderName;
+  model: string;
+  reason: string;
+  metricsUsed: ShadowAdvisorMetricsUsed;
+}
+
+export interface ShadowAdvisorComparison {
+  matchesActualSelection: boolean;
+  differenceReason?: string;
+}
+
+export interface ShadowRoutingAdvice {
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  comparison: ShadowAdvisorComparison;
+  dataQuality: ShadowAdvisorDataQuality;
+  advisorAuthority: "none";
+  reason: string;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

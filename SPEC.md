@@ -967,3 +967,117 @@ La respuesta debe preservar `dataQuality` y `reason` para que un consumidor pued
 - No se ejecutan llamadas adicionales a providers.
 - No se modifica Router COST-FIRST.
 - No se agregan fallback, retries, dashboard, ranking automatico, aprendizaje automatico ni nuevos providers.
+
+## Apertura V0.8
+
+Titulo: V0.8 - Shadow Routing Advisor.
+
+Estado de V0.7: cerrada y congelada.
+
+Commit de cierre V0.7: `c027fe81fe395c8f58f1af929d5e625ef83c2a3b`.
+
+V0.8 comienza como fase separada.
+
+### Objetivo V0.8
+
+Crear un Shadow Routing Advisor read-only que compare la decision real del Router COST-FIRST contra una recomendacion historica derivada unicamente del Provider Scorecard, sin autoridad para cambiar la seleccion real.
+
+### Alcance V0.8
+
+Incluido:
+
+- Advisor read-only.
+- Uso exclusivo de datos del Provider Scorecard.
+- Comparacion entre:
+  - decision real del Router COST-FIRST;
+  - recomendacion historica del Shadow Routing Advisor.
+- Explicacion deterministica y auditable.
+- Registro de coincidencia o divergencia entre decision real y recomendacion historica.
+- Salida consultable sin generar llamadas adicionales.
+
+Fuera de alcance:
+
+- Ranking opaco.
+- Cambiar seleccion real.
+- Autoridad de routing.
+- Cambios al Router COST-FIRST.
+- Llamadas adicionales a providers.
+- Fallback.
+- Retries.
+- Dashboard.
+- Aprendizaje automatico.
+- Optimizacion historica automatica.
+- Nuevos providers.
+
+### Contrato Del Shadow Routing Advisor
+
+Entrada minima:
+
+- Decision real del Router COST-FIRST:
+  - `provider`.
+  - `model`.
+  - `estimatedCostUsd`.
+  - `reason`.
+- Scorecards disponibles V0.6/V0.7.
+- Candidatos compatibles ya considerados por Router, cuando esten disponibles.
+
+Salida minima:
+
+- `actualSelection`:
+  - `provider`.
+  - `model`.
+  - `estimatedCostUsd`.
+  - `reason`.
+- `shadowRecommendation`:
+  - `provider`.
+  - `model`.
+  - `reason`.
+  - metricas usadas del Scorecard.
+- `comparison`:
+  - `matchesActualSelection`: boolean.
+  - `differenceReason`, cuando difiera.
+- `dataQuality`:
+  - `complete`.
+  - `partial`.
+  - `insufficient_data`.
+- `advisorAuthority`: siempre `none` en V0.8.
+
+### Reglas De Recomendacion V0.8
+
+El advisor debe ser deterministico y explicable:
+
+1. Solo considerar provider/model con scorecard disponible.
+2. No considerar candidatos sin datos suficientes como si fueran mejores.
+3. Preferir provider/model con mejor historial verificable de evaluacion `pass`.
+4. Usar latencia promedio como desempate si la calidad historica es equivalente.
+5. Usar costo real promedio como desempate posterior si la latencia es equivalente.
+6. Usar `provider:model` como desempate final deterministico.
+
+Estas reglas no reemplazan COST-FIRST. Solo generan una recomendacion paralela para comparar.
+
+### Semantica V0.8
+
+La decision real sigue perteneciendo al Router COST-FIRST. El Shadow Routing Advisor no puede modificar provider/model, no puede reintentar, no puede ejecutar fallback y no puede llamar providers.
+
+Si la recomendacion historica difiere de la seleccion real, V0.8 solo registra o devuelve la diferencia como observacion auditable.
+
+### Casos Limite V0.8
+
+- Si no hay scorecards disponibles, devolver `insufficient_data`.
+- Si el scorecard de un candidato es `partial`, conservar esa calidad en la explicacion.
+- Si solo existe scorecard para la seleccion real, el advisor puede recomendar la seleccion real con advertencia de cobertura limitada.
+- Si la recomendacion historica difiere de COST-FIRST, no se cambia la ejecucion real.
+- Si dos recomendaciones empatan, usar desempate deterministico por `provider:model`.
+- Si el Provider Scorecard contiene datos parciales, no inventar metricas faltantes.
+- El advisor no debe producir llamadas a OpenAI, Anthropic ni otros providers.
+
+### Criterios De Aceptacion V0.8
+
+- El advisor recibe o deriva scorecards existentes y no consulta providers.
+- El advisor compara seleccion real COST-FIRST contra recomendacion historica.
+- La salida indica si la recomendacion coincide con la seleccion real.
+- Toda recomendacion incluye razon deterministica y metricas usadas.
+- El advisor declara `advisorAuthority` como `none`.
+- Datos insuficientes devuelven `insufficient_data` sin inventar ranking.
+- Una divergencia no modifica Router COST-FIRST ni la ejecucion real.
+- No se agregan fallback, retries, dashboard, aprendizaje automatico, ranking opaco ni nuevos providers.

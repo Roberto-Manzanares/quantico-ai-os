@@ -670,3 +670,86 @@ Criterios de aceptacion:
 - La lectura no muta State/Memory.
 - No se modifica Router COST-FIRST ni ProviderAdapter.
 - No se agregan llamadas reales, fallback, retries, dashboard, ranking automatico ni aprendizaje automatico.
+
+## Decision 021: V0.8 Abre Shadow Routing Advisor
+
+Estado: aceptada.
+
+Decision:
+
+V0.8 se abre como fase separada para crear un Shadow Routing Advisor read-only que compare la decision real del Router COST-FIRST contra una recomendacion historica derivada del Provider Scorecard.
+
+Razon:
+
+V0.7 ya permite consultar scorecards agregados. Antes de permitir que datos historicos influyan en routing, Quantico AI OS debe observar si una recomendacion historica difiere de COST-FIRST y explicar esa diferencia sin cambiar ejecuciones reales.
+
+Consecuencia:
+
+El Advisor usara unicamente datos del Provider Scorecard. No consulta providers, no ejecuta llamadas adicionales, no hace fallback, no hace retries y no tiene autoridad de routing.
+
+La decision real sigue siendo responsabilidad del Router COST-FIRST. El Shadow Routing Advisor solo devuelve:
+
+- Seleccion real.
+- Recomendacion historica.
+- Si coincide o difiere.
+- Razon deterministica.
+- Metricas de scorecard utilizadas.
+- Calidad de datos.
+- `advisorAuthority` igual a `none`.
+
+La recomendacion historica debe ser deterministica y auditable. No se permite ranking opaco, aprendizaje automatico ni optimizacion historica automatica.
+
+Quedan fuera dashboard, cambios al Router COST-FIRST, cambios de seleccion real, fallback, retries, llamadas adicionales a providers, ranking opaco, aprendizaje automatico y nuevos providers.
+
+Criterios de aceptacion:
+
+- El Advisor usa solo Provider Scorecard.
+- El Advisor compara seleccion real COST-FIRST contra recomendacion historica.
+- La salida explica coincidencias y divergencias sin modificar ejecucion.
+- Datos insuficientes devuelven `insufficient_data`.
+- `advisorAuthority` es siempre `none`.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+
+## Decision 022: V0.8 Cierra Shadow Routing Advisor Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.8 queda cerrada despues de implementar y validar por dry-run el Shadow Routing Advisor como recomendador observacional sin autoridad de routing.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede comparar la seleccion real del Router COST-FIRST contra una recomendacion historica derivada solo del Provider Scorecard, sin modificar la ejecucion real ni llamar providers.
+
+Evidencia:
+
+- Match entre COST-FIRST y shadow verificado.
+- Divergence entre COST-FIRST y shadow verificado.
+- Exclusion por dataQuality insuficiente verificada.
+- Precedencia deterministica verificada:
+  - evaluation pass rate.
+  - success rate.
+  - cost.
+  - latency.
+  - provider:model.
+- Razones y metricas auditables verificadas.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls: 0.
+- Tests: 106/106 pass.
+
+Consecuencia:
+
+Shadow Routing Advisor queda disponible como observador comparativo. No decide routing, no modifica COST-FIRST, no ejecuta providers, no hace fallback, no hace retries y no introduce dashboard.
+
+Criterios de aceptacion:
+
+- El Advisor produce match cuando la recomendacion coincide con COST-FIRST.
+- El Advisor produce divergence cuando la recomendacion historica difiere.
+- Los candidatos con datos insuficientes se excluyen.
+- La precedencia deterministica se aplica en el orden documentado.
+- La salida incluye razones y metricas auditables.
+- `advisorAuthority` permanece siempre `none`.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+- No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.
