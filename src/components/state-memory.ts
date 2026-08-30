@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Execution, ExecutionEvent, PendingApprovalStep } from "../types.js";
+import type { BudgetLedgerEntry, Execution, ExecutionEvent, PendingApprovalStep } from "../types.js";
 
 export interface StateMemory {
   saveExecution(execution: Execution): Promise<void>;
@@ -10,12 +10,15 @@ export interface StateMemory {
   savePendingApprovalStep(step: PendingApprovalStep): Promise<void>;
   getPendingApprovalStep(executionId: string): Promise<PendingApprovalStep | undefined>;
   clearPendingApprovalStep(executionId: string): Promise<void>;
+  saveBudgetLedgerEntry(entry: BudgetLedgerEntry): Promise<void>;
+  listBudgetLedgerEntries(executionId?: string): Promise<BudgetLedgerEntry[]>;
 }
 
 export class InMemoryStateMemory implements StateMemory {
   private readonly executions = new Map<string, Execution>();
   private readonly events: ExecutionEvent[] = [];
   private readonly pendingApprovalSteps = new Map<string, PendingApprovalStep>();
+  private readonly budgetLedgerEntries: BudgetLedgerEntry[] = [];
 
   async saveExecution(execution: Execution): Promise<void> {
     this.executions.set(execution.id, execution);
@@ -44,12 +47,31 @@ export class InMemoryStateMemory implements StateMemory {
   async clearPendingApprovalStep(executionId: string): Promise<void> {
     this.pendingApprovalSteps.delete(executionId);
   }
+
+  async saveBudgetLedgerEntry(entry: BudgetLedgerEntry): Promise<void> {
+    const existingIndex = this.budgetLedgerEntries.findIndex((item) => isSameLedgerEntry(item, entry));
+
+    if (existingIndex >= 0) {
+      this.budgetLedgerEntries[existingIndex] = entry;
+    } else {
+      this.budgetLedgerEntries.push(entry);
+    }
+  }
+
+  async listBudgetLedgerEntries(executionId?: string): Promise<BudgetLedgerEntry[]> {
+    if (!executionId) {
+      return [...this.budgetLedgerEntries];
+    }
+
+    return this.budgetLedgerEntries.filter((entry) => entry.executionId === executionId);
+  }
 }
 
 interface StateFileData {
   executions: Execution[];
   events: ExecutionEvent[];
   pendingApprovalSteps: PendingApprovalStep[];
+  budgetLedgerEntries: BudgetLedgerEntry[];
 }
 
 export class FileStateMemory implements StateMemory {
@@ -112,13 +134,36 @@ export class FileStateMemory implements StateMemory {
     await this.writeState(state);
   }
 
+  async saveBudgetLedgerEntry(entry: BudgetLedgerEntry): Promise<void> {
+    const state = await this.readState();
+    const existingIndex = state.budgetLedgerEntries.findIndex((item) => isSameLedgerEntry(item, entry));
+
+    if (existingIndex >= 0) {
+      state.budgetLedgerEntries[existingIndex] = entry;
+    } else {
+      state.budgetLedgerEntries.push(entry);
+    }
+
+    await this.writeState(state);
+  }
+
+  async listBudgetLedgerEntries(executionId?: string): Promise<BudgetLedgerEntry[]> {
+    const state = await this.readState();
+
+    if (!executionId) {
+      return state.budgetLedgerEntries;
+    }
+
+    return state.budgetLedgerEntries.filter((entry) => entry.executionId === executionId);
+  }
+
   private async readState(): Promise<StateFileData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
       return normalizeState(JSON.parse(raw, reviveDates) as Partial<StateFileData>);
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return { executions: [], events: [], pendingApprovalSteps: [] };
+        return { executions: [], events: [], pendingApprovalSteps: [], budgetLedgerEntries: [] };
       }
 
       throw error;
@@ -132,7 +177,7 @@ export class FileStateMemory implements StateMemory {
 }
 
 function reviveDates(key: string, value: unknown): unknown {
-  if ((key === "createdAt" || key === "updatedAt") && typeof value === "string") {
+  if ((key === "createdAt" || key === "updatedAt" || key === "timestamp") && typeof value === "string") {
     return new Date(value);
   }
 
@@ -143,8 +188,18 @@ function normalizeState(state: Partial<StateFileData>): StateFileData {
   return {
     executions: state.executions ?? [],
     events: state.events ?? [],
-    pendingApprovalSteps: state.pendingApprovalSteps ?? []
+    pendingApprovalSteps: state.pendingApprovalSteps ?? [],
+    budgetLedgerEntries: state.budgetLedgerEntries ?? []
   };
+}
+
+function isSameLedgerEntry(left: BudgetLedgerEntry, right: BudgetLedgerEntry): boolean {
+  return (
+    left.executionId === right.executionId &&
+    left.provider === right.provider &&
+    left.model === right.model &&
+    left.timestamp.getTime() === right.timestamp.getTime()
+  );
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

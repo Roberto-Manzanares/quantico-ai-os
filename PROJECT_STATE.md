@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.3 validated.
+Fase: V0.4 validated.
 
-Version objetivo: V0.3.
+Version objetivo: V0.4.
 
 Codigo implementado: si.
 
-Estado actual: V0.3 validada con ejecucion real COST-FIRST.
+Estado actual: V0.4 validada con dry-run verificable.
 
-Ultimo hito: validacion real del Router COST-FIRST end-to-end.
+Ultimo hito: implementacion y dry-run del Budget Ledger.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 68/68 pass.
+Tests actuales: 74/74 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -53,6 +53,14 @@ Restriccion de diseno V0.2: COST-FIRST POLICY.
 V0.3: cerrada y congelada.
 
 Objetivo V0.3: COST-FIRST Router real.
+
+Commit de cierre V0.3: `976a9031cb08120b5a04791f05d9eda5abd35627`.
+
+V0.4: cerrada y congelada.
+
+Titulo V0.4: Actual Cost Accounting + Budget Ledger.
+
+Objetivo V0.4: cerrar el ciclo economico del Kernel comparando costo estimado pre-ejecucion contra costo real post-ejecucion y persistiendo un ledger auditable.
 
 Defaults economicos V0.2:
 
@@ -170,13 +178,37 @@ La validacion confirmo:
 
 `estimatedCostUsd` representa el costo pre-ejecucion usado por Model Router y Token Governor para seleccionar y validar presupuesto. No representa un recalculo posterior basado en usage real.
 
+## Cierre V0.4
+
+V0.4 queda cerrada despues de validar por dry-run el Budget Ledger persistible con snapshot historico de pricing.
+
+La validacion confirmo:
+
+- Execution ID: `exec_v04_dryrun`.
+- Provider/model: OpenAI / `gpt-5-nano`.
+- Estimated input/output tokens: 112 / 30.
+- `estimatedCostUsd`: 0.000018.
+- Actual input/output tokens: 127 / 24.
+- `actualCostUsd`: 0.000016.
+- `costDeltaUsd`: -0.000002.
+- Latencia: 2240ms.
+- `calculationStatus`: `calculated`.
+- Pricing snapshot persistido: `inputPricePerMillion` 0.05 y `outputPricePerMillion` 0.40.
+- Un cambio posterior de pricing no altera entradas historicas del ledger.
+- Una ejecucion `approval pending` no crea entrada de ledger.
+- Una ejecucion terminal sin provider crea entrada `not_applicable`.
+- El ledger no persiste prompts ni secretos.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir objetivo concreto de V0.4 antes de tocar codigo.
+- Definir objetivo concreto de V0.5 antes de tocar codigo.
+- Mantener `estimatedCostUsd` como costo pre-ejecucion de Router/Token Governor.
+- Mantener `actualCostUsd` como costo post-ejecucion calculado desde usage real y snapshot de pricing registrado en el ledger.
+- Mantener ledger auditable por ejecucion, provider y modelo.
 - Mantener Router COST-FIRST con pricing configurado y verificable.
 - Mantener Token Governor como autoridad final de presupuesto.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
-- No implementar fallback automatico, scorecards, retries automaticos, routing historico ni nuevos providers sin decision documental previa.
+- No implementar billing, facturacion, cuotas, fallback automatico, scorecards, retries automaticos, routing historico, alertas automaticas ni nuevos providers sin decision documental previa.
 
 ## Criterio De Cierre V0.2
 
@@ -202,6 +234,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.2 queda validada contra Anthropic real con estado `succeeded` y evaluacion `pass`.
 - V0.3 declara objetivo, alcance, algoritmo, precedencia y casos limite antes de tocar codigo.
 - V0.3 queda validada con Router COST-FIRST real seleccionando OpenAI `gpt-5-nano` sobre Anthropic `claude-haiku-4-5-20251001` por menor costo estimado compatible.
+- V0.4 declara contrato de ledger, semantica estimated vs actual, estados de costo real y casos limite antes de tocar codigo.
+- V0.4 queda validada con dry-run verificable de Budget Ledger, costo real, delta, snapshots historicos y acumulados persistibles.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

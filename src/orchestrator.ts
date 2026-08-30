@@ -13,6 +13,7 @@ import type { HumanApprovalGate } from "./components/human-approval-gate.js";
 import type { ModelRouter } from "./components/model-router.js";
 import type { StateMemory } from "./components/state-memory.js";
 import type { TokenGovernor } from "./components/token-governor.js";
+import type { BudgetLedger } from "./components/budget-ledger.js";
 import { ProviderAdapterError, type ProviderAdapter } from "./providers/provider-adapter.js";
 
 export interface OrchestratorDependencies {
@@ -22,6 +23,7 @@ export interface OrchestratorDependencies {
   stateMemory: StateMemory;
   evaluator: Evaluator;
   humanApprovalGate: HumanApprovalGate;
+  budgetLedger: BudgetLedger;
   providers: Partial<Record<ProviderName, ProviderAdapter>>;
 }
 
@@ -102,6 +104,12 @@ export class Orchestrator {
       execution.updatedAt = new Date();
       await this.dependencies.stateMemory.saveExecution(execution);
       await this.appendEvent(execution, "execution_failed", execution.error);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision,
+        tokenDecision,
+        providerCalled: false
+      });
       const evaluation = await this.evaluateAndPersist(execution);
       return { execution, evaluation };
     }
@@ -149,6 +157,12 @@ export class Orchestrator {
       execution.updatedAt = new Date();
       await this.dependencies.stateMemory.saveExecution(execution);
       await this.appendEvent(execution, "provider_error", execution.error);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision,
+        tokenDecision,
+        providerCalled: false
+      });
       const evaluation = await this.evaluateAndPersist(execution);
       return { execution, evaluation };
     }
@@ -171,15 +185,30 @@ export class Orchestrator {
       execution.updatedAt = new Date();
       await this.dependencies.stateMemory.saveExecution(execution);
       await this.appendEvent(execution, "provider_error", normalizedError);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision,
+        tokenDecision,
+        providerCalled: didReachProvider(error)
+      });
       const evaluation = await this.evaluateAndPersist(execution);
       return { execution, evaluation };
     }
 
+    const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
+      executionId: execution.id,
+      routingDecision,
+      tokenDecision,
+      modelCall,
+      providerCalled: true
+    });
     execution.finalResult = modelCall.content;
     execution.metrics = {
       inputTokens: modelCall.inputTokens,
       outputTokens: modelCall.outputTokens,
       estimatedCostUsd: tokenDecision.estimatedCostUsd ?? 0,
+      actualCostUsd: budgetLedgerEntry.actualCostUsd,
+      costDeltaUsd: budgetLedgerEntry.costDeltaUsd,
       latencyMs: modelCall.latencyMs
     };
     execution.updatedAt = new Date();
@@ -190,8 +219,11 @@ export class Orchestrator {
       inputTokens: modelCall.inputTokens,
       outputTokens: modelCall.outputTokens,
       estimatedCostUsd: execution.metrics.estimatedCostUsd,
+      actualCostUsd: budgetLedgerEntry.actualCostUsd,
+      costDeltaUsd: budgetLedgerEntry.costDeltaUsd,
       latencyMs: modelCall.latencyMs
     });
+    await this.appendEvent(execution, "budget_ledger_recorded", { budgetLedgerEntry });
 
     const evaluation = await this.evaluateAndPersist(execution);
 
@@ -262,6 +294,22 @@ export class Orchestrator {
       createdAt: new Date()
     });
   }
+
+  private async recordBudgetLedger(input: {
+    execution: Execution;
+    routingDecision: Awaited<ReturnType<ModelRouter["route"]>>;
+    tokenDecision: Awaited<ReturnType<TokenGovernor["evaluate"]>>;
+    providerCalled: boolean;
+  }): Promise<void> {
+    const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
+      executionId: input.execution.id,
+      routingDecision: input.routingDecision,
+      tokenDecision: input.tokenDecision,
+      providerCalled: input.providerCalled,
+      latencyMs: input.execution.metrics.latencyMs
+    });
+    await this.appendEvent(input.execution, "budget_ledger_recorded", { budgetLedgerEntry });
+  }
 }
 
 function determineTaskType(goal: string): TaskType {
@@ -306,4 +354,12 @@ function normalizeProviderError(error: unknown): { code: string; message: string
     code: "provider_error",
     message: error instanceof Error ? error.message : "Unknown provider error."
   };
+}
+
+function didReachProvider(error: unknown): boolean {
+  if (error instanceof ProviderAdapterError && error.code === "provider_unavailable") {
+    return false;
+  }
+
+  return true;
 }

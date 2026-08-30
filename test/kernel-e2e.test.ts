@@ -64,6 +64,7 @@ test("Kernel executes the full V0.1 flow successfully with a fake provider", asy
   });
   const persisted = await system.stateMemory.getExecution(result.execution.id);
   const events = await system.stateMemory.listEvents(result.execution.id);
+  const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(result.execution.id);
 
   assert.equal(result.execution.status, "succeeded");
   assert.equal(result.execution.taskType, "generation");
@@ -73,6 +74,8 @@ test("Kernel executes the full V0.1 flow successfully with a fake provider", asy
   assert.equal(result.execution.metrics.inputTokens, 12);
   assert.equal(result.execution.metrics.outputTokens, 8);
   assert.equal(result.execution.metrics.estimatedCostUsd, 0.000102);
+  assert.equal(result.execution.metrics.actualCostUsd, 0.000028);
+  assert.equal(result.execution.metrics.costDeltaUsd, -0.000074);
   assert.equal(result.execution.metrics.latencyMs, 25);
   assert.equal(result.evaluation.status, "pass");
   assert.ok(result.evaluation.criteria.includes("contains_text:pass"));
@@ -81,7 +84,13 @@ test("Kernel executes the full V0.1 flow successfully with a fake provider", asy
   assert.ok(events.some((event) => event.type === "model_routed"));
   assert.ok(events.some((event) => event.type === "token_governed"));
   assert.ok(events.some((event) => event.type === "model_called"));
+  assert.ok(events.some((event) => event.type === "budget_ledger_recorded"));
   assert.ok(events.some((event) => event.type === "evaluation_completed"));
+  assert.equal(ledgerEntries.length, 1);
+  assert.equal(ledgerEntries[0]?.calculationStatus, "calculated");
+  assert.equal(ledgerEntries[0]?.inputPricePerMillion, 1);
+  assert.equal(ledgerEntries[0]?.outputPricePerMillion, 2);
+  assert.equal(ledgerEntries[0]?.actualCostUsd, 0.000028);
 
   const rawState = await readFile(stateFilePath, "utf8");
   assert.match(rawState, /kernel success result/);
@@ -141,10 +150,14 @@ test("Kernel does not call provider when Token Governor rejects", async () => {
     },
     contextRefs: ["text:fixture:block by token budget"]
   });
+  const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(result.execution.id);
 
   assert.equal(result.execution.status, "failed");
   assert.equal(provider.calls.length, 0);
   assert.equal(result.execution.error?.code, "token_budget_exceeded");
+  assert.equal(ledgerEntries.length, 1);
+  assert.equal(ledgerEntries[0]?.calculationStatus, "not_applicable");
+  assert.equal(ledgerEntries[0]?.actualCostUsd, null);
 
   await cleanup();
 });
@@ -169,11 +182,13 @@ test("Kernel pauses for human approval before provider call", async () => {
     }
   });
   const pendingStep = await system.stateMemory.getPendingApprovalStep(result.execution.id);
+  const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(result.execution.id);
 
   assert.equal(result.execution.status, "needs_human");
   assert.equal(result.evaluation.status, "needs_review");
   assert.equal(provider.calls.length, 0);
   assert.equal(pendingStep?.action.name, "provider_model_call");
+  assert.equal(ledgerEntries.length, 0);
 
   await cleanup();
 });
@@ -196,12 +211,16 @@ test("Kernel handles provider errors with traceable normalized failure", async (
     }
   });
   const events = await system.stateMemory.listEvents(result.execution.id);
+  const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(result.execution.id);
 
   assert.equal(result.execution.status, "failed");
   assert.equal(provider.calls.length, 1);
   assert.equal(result.execution.error?.code, "provider_error");
   assert.equal(result.evaluation.status, "fail");
   assert.ok(events.some((event) => event.type === "provider_error"));
+  assert.equal(ledgerEntries.length, 1);
+  assert.equal(ledgerEntries[0]?.calculationStatus, "missing_usage");
+  assert.equal(ledgerEntries[0]?.actualCostUsd, null);
 
   await cleanup();
 });

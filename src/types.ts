@@ -97,6 +97,8 @@ export interface ExecutionMetrics {
   inputTokens: number;
   outputTokens: number;
   estimatedCostUsd: number;
+  actualCostUsd?: number | null;
+  costDeltaUsd?: number | null;
   latencyMs: number;
 }
 
@@ -222,6 +224,45 @@ export interface ModelCallResult {
   outputTokens: number;
   estimatedCostUsd?: number | null;
   latencyMs: number;
+}
+
+export type BudgetLedgerCalculationStatus =
+  | "calculated"
+  | "missing_usage"
+  | "missing_pricing"
+  | "not_applicable";
+
+export interface BudgetLedgerEntry {
+  executionId: string;
+  provider: ProviderName;
+  model: string;
+  estimatedInputTokens: number;
+  expectedOutputTokens: number;
+  actualInputTokens: number | null;
+  actualOutputTokens: number | null;
+  inputPricePerMillion: number | null;
+  outputPricePerMillion: number | null;
+  estimatedCostUsd: number | null;
+  actualCostUsd: number | null;
+  costDeltaUsd: number | null;
+  latencyMs: number;
+  timestamp: Date;
+  calculationStatus: BudgetLedgerCalculationStatus;
+  calculationReason?: string;
+}
+
+export interface BudgetLedgerTotals {
+  entryCount: number;
+  actualCostUsd: number;
+  actualInputTokens: number;
+  actualOutputTokens: number;
+  latencyMs: number;
+}
+
+export interface BudgetLedgerSummary {
+  byExecution: Record<string, BudgetLedgerTotals>;
+  byProvider: Record<ProviderName, BudgetLedgerTotals>;
+  byModel: Record<string, BudgetLedgerTotals>;
 }
 
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";

@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./api.js";
 export * from "./orchestrator.js";
+export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
 export * from "./components/evaluator.js";
 export * from "./components/human-approval-gate.js";
@@ -13,6 +14,7 @@ export * from "./providers/openai-adapter.js";
 export * from "./providers/provider-adapter.js";
 
 import { SkeletonContextCompiler } from "./components/context-compiler.js";
+import { SkeletonBudgetLedger } from "./components/budget-ledger.js";
 import { SkeletonEvaluator } from "./components/evaluator.js";
 import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
 import { SkeletonModelRouter } from "./components/model-router.js";
@@ -38,6 +40,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   const pricingTable = options.pricingTable ?? DEFAULT_MODEL_PRICING_TABLE;
   const modelRouter = new SkeletonModelRouter(options.modelConfigs, pricingTable);
   const tokenGovernor = new SkeletonTokenGovernor(pricingTable);
+  const budgetLedger = new SkeletonBudgetLedger(stateMemory, pricingTable);
   const humanApprovalGate = new SkeletonHumanApprovalGate();
   const evaluator = new SkeletonEvaluator();
   const providers = options.providers ?? {
@@ -50,6 +53,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     contextCompiler,
     modelRouter,
     tokenGovernor,
+    budgetLedger,
     humanApprovalGate,
     evaluator,
     providers,
@@ -57,6 +61,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
       contextCompiler,
       modelRouter,
       tokenGovernor,
+      budgetLedger,
       stateMemory,
       humanApprovalGate,
       evaluator,

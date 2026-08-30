@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada y la apertura documental de V0.3.
+Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada y la apertura documental de V0.4.
 
 ## Alcance Del MVP V0.1
 
@@ -441,3 +441,150 @@ Fuera de alcance:
 - Token Governor conserva validacion de `maxCostUsd` antes de cada llamada.
 - No se modifican `ProviderAdapter`, Provider Adapters, Evaluator, Human Approval Gate ni State/Memory para cumplir V0.3.
 - No se agregan fallback automatico, retries, scorecards, routing historico, dashboard ni nuevos providers.
+
+## Apertura V0.4
+
+Titulo: V0.4 - Actual Cost Accounting + Budget Ledger.
+
+Estado de V0.3: cerrada y congelada.
+
+Commit de cierre V0.3: `976a9031cb08120b5a04791f05d9eda5abd35627`.
+
+V0.4 comienza como fase separada.
+
+### Objetivo V0.4
+
+Cerrar el ciclo economico del Kernel comparando costo estimado pre-ejecucion contra costo real post-ejecucion y persistiendo un ledger auditable.
+
+### Alcance V0.4
+
+Incluido:
+
+- Mantener `estimatedCostUsd` como estimacion pre-ejecucion.
+- Calcular `actualCostUsd` despues de la respuesta usando usage real normalizado del provider.
+- Persistir un registro de ledger por llamada de modelo dentro de una ejecucion.
+- Registrar acumulados simples por ejecucion, provider y modelo.
+- Definir `costDeltaUsd = actualCostUsd - estimatedCostUsd`.
+- Usar pricing proveniente siempre de configuracion verificable.
+- No inventar costo real ni asumir cero cuando falte pricing post-ejecucion.
+- Mantener Token Governor como autoridad pre-ejecucion.
+- Mantener el ledger persistible y auditable mediante State/Memory actual.
+
+Fuera de alcance:
+
+- Billing a clientes.
+- Facturacion.
+- Dashboard.
+- Cuotas por usuario u organizacion.
+- Fallback.
+- Retries.
+- Scorecards.
+- Optimizacion historica.
+- Nuevos providers.
+- Cobro o markup.
+- Alertas automaticas.
+
+### Contrato Del Ledger
+
+Cada entrada de ledger debe representar una llamada de modelo ya intentada y debe incluir:
+
+- `executionId`.
+- `provider`.
+- `model`.
+- `estimatedInputTokens`.
+- `expectedOutputTokens`.
+- `actualInputTokens`.
+- `actualOutputTokens`.
+- `inputPricePerMillion`.
+- `outputPricePerMillion`.
+- `estimatedCostUsd`.
+- `actualCostUsd`.
+- `costDeltaUsd`.
+- `latencyMs`.
+- `timestamp`.
+- Estado de calculo de costo real.
+- Razon verificable cuando `actualCostUsd` no pueda calcularse.
+
+`inputPricePerMillion` y `outputPricePerMillion` son el snapshot del pricing utilizado para calcular `actualCostUsd` en esa ejecucion. Una entrada historica del ledger nunca debe depender de consultar la tabla de precios vigente posteriormente para explicar su costo.
+
+Los acumulados simples deben poder consultarse por:
+
+- Ejecucion.
+- Provider.
+- Modelo.
+
+### Semantica Estimated Vs Actual
+
+`estimatedCostUsd` es el costo pre-ejecucion usado por Model Router y Token Governor para seleccionar modelo y validar presupuesto antes de llamar al provider.
+
+`actualCostUsd` es el costo post-ejecucion calculado usando usage real reportado por el provider y el pricing aplicable registrado en el ledger.
+
+`actualCostUsd` no significa necesariamente importe final facturado por el provider. Billing e invoice reconciliation siguen fuera de alcance.
+
+`costDeltaUsd` es la diferencia entre ambos:
+
+```text
+costDeltaUsd = actualCostUsd - estimatedCostUsd
+```
+
+Si `actualCostUsd` no puede calcularse, `costDeltaUsd` tampoco debe calcularse.
+
+### Estados De Costo Real
+
+El calculo de costo real debe producir un estado explicito:
+
+- `calculated`: existe usage real y pricing verificable para provider/model.
+- `missing_usage`: el provider no devolvio tokens reales suficientes para calcular costo.
+- `missing_pricing`: no existe pricing verificable para provider/model despues de ejecutar.
+- `not_applicable`: la ejecucion no realizo llamada de modelo.
+
+Cuando el estado no sea `calculated`, `actualCostUsd` y `costDeltaUsd` deben quedar como `null` o ausentes, nunca como cero inventado.
+
+### Algoritmo De Actual Cost
+
+1. Recibir resultado normalizado del Provider Adapter despues de la llamada.
+2. Leer `input_tokens` y `output_tokens` reales del usage normalizado.
+3. Buscar pricing configurado para `provider/model`.
+4. Si falta usage, registrar estado `missing_usage` y razon verificable.
+5. Si falta pricing, registrar estado `missing_pricing` y razon verificable.
+6. Si usage y pricing existen, copiar `inputPricePerMillion` y `outputPricePerMillion` a la entrada de ledger como snapshot historico.
+7. Calcular:
+
+```text
+actualCostUsd =
+  (actualInputTokens / 1_000_000 * inputPricePerMillion) +
+  (actualOutputTokens / 1_000_000 * outputPricePerMillion)
+```
+
+8. Calcular `costDeltaUsd = actualCostUsd - estimatedCostUsd`.
+9. Persistir entrada de ledger y actualizar acumulados simples.
+
+### Estrategia Minima De Persistencia
+
+V0.4 debe reutilizar State/Memory actual con archivo local estructurado. El ledger debe guardarse como datos operacionales reemplazables, sin introducir base de datos, servicios externos ni dependencias nuevas salvo necesidad justificada.
+
+### Casos Limite V0.4
+
+- Si una ejecucion es bloqueada por Token Governor antes del provider, no debe existir costo real; el ledger puede registrar `not_applicable`.
+- Si el provider falla antes de devolver usage, `actualCostUsd` queda sin calcular con estado `missing_usage`.
+- Si el provider devuelve usage parcial, no se debe calcular costo real incompleto.
+- Si falta pricing post-ejecucion, no se debe asumir costo cero.
+- Si `estimatedCostUsd` existe pero `actualCostUsd` no, `costDeltaUsd` debe quedar sin calcular.
+- Si `actualCostUsd` excede `estimatedCostUsd`, la diferencia se registra como delta positivo.
+- Si `actualCostUsd` queda por debajo de `estimatedCostUsd`, la diferencia se registra como delta negativo.
+- Si varias llamadas ocurren en una ejecucion futura, los acumulados por ejecucion deben sumar entradas individuales sin mezclar providers/modelos.
+- El ledger no debe persistir prompts completos ni secretos como requisito de costo.
+
+### Criterios De Aceptacion V0.4
+
+- Dada una llamada exitosa con usage real y pricing configurado, el sistema calcula `actualCostUsd`.
+- Dada una llamada exitosa, el sistema persiste una entrada de ledger con los campos definidos.
+- Dada una entrada historica de ledger, el costo puede explicarse usando `inputPricePerMillion` y `outputPricePerMillion` persistidos sin consultar la tabla de precios vigente.
+- Dado `estimatedCostUsd` y `actualCostUsd`, el sistema calcula `costDeltaUsd` correctamente.
+- Dada una ausencia de pricing post-ejecucion, el sistema no registra costo real como cero.
+- Dada una ausencia de usage real, el sistema registra estado `missing_usage`.
+- Dada una ejecucion sin llamada a provider, el sistema no inventa costo real.
+- Los acumulados por ejecucion, provider y modelo se calculan desde entradas de ledger persistidas.
+- Token Governor sigue usando `estimatedCostUsd` para presupuesto pre-ejecucion.
+- ProviderAdapter no cambia salvo ajustes de tipos estrictamente necesarios para usar usage ya normalizado.
+- No se agregan billing, facturacion, dashboard, cuotas, fallback, retries, scorecards, optimizacion historica, nuevos providers, cobro, markup ni alertas automaticas.

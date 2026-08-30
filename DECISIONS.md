@@ -326,3 +326,90 @@ Criterios de aceptacion:
 - Token Governor valida el presupuesto antes de ejecutar.
 - Evaluator produce `pass` con criterios deterministas verificables.
 - State/Memory registra estado, metricas y resultado sin secretos.
+
+## Decision 013: V0.4 Abre Actual Cost Accounting + Budget Ledger
+
+Estado: aceptada.
+
+Decision:
+
+V0.4 se abre como fase separada para cerrar el ciclo economico del Kernel mediante calculo de costo real post-ejecucion y un ledger persistente auditable.
+
+Razon:
+
+V0.3 ya valida seleccion pre-ejecucion basada en menor costo estimado compatible. El siguiente riesgo economico es comparar esa estimacion contra usage real del provider para saber cuanto costo efectivamente produjo cada llamada.
+
+Consecuencia:
+
+`estimatedCostUsd` conserva su significado actual: estimacion pre-ejecucion usada por Model Router y Token Governor antes de gastar.
+
+`actualCostUsd` se calcula despues de la respuesta usando tokens reales normalizados por el provider y el pricing aplicable registrado en el ledger.
+
+Cada entrada del ledger debe persistir `inputPricePerMillion` y `outputPricePerMillion` como snapshot del pricing usado para calcular `actualCostUsd` en esa ejecucion. Una entrada historica del ledger nunca debe depender de consultar la tabla de precios vigente posteriormente para explicar su costo.
+
+`actualCostUsd` no significa necesariamente importe final facturado por el provider. Billing e invoice reconciliation siguen fuera de alcance.
+
+`costDeltaUsd` se define como:
+
+```text
+costDeltaUsd = actualCostUsd - estimatedCostUsd
+```
+
+Si falta usage real o pricing verificable post-ejecucion, no se inventa costo real ni se asume cero. El ledger debe registrar un estado explicito como `missing_usage`, `missing_pricing` o `not_applicable`.
+
+State/Memory sigue siendo la estrategia minima de persistencia. No se introduce base de datos, dashboard, billing, facturacion, cuotas, fallback, retries, scorecards, optimizacion historica, nuevos providers, cobro, markup ni alertas automaticas.
+
+ProviderAdapter no cambia salvo que sea estrictamente necesario por tipos existentes de usage; la preferencia es usar datos ya normalizados.
+
+Criterios de aceptacion:
+
+- Cada llamada con usage real y pricing configurado calcula `actualCostUsd`.
+- Cada entrada de ledger registra executionId, provider, model, tokens estimados y reales, snapshot de pricing, costos estimado y real, delta, latencia y timestamp.
+- Cada entrada historica puede explicar su costo usando `inputPricePerMillion` y `outputPricePerMillion` persistidos.
+- Los acumulados simples por ejecucion, provider y modelo se derivan de entradas persistidas.
+- La ausencia de pricing o usage real no produce costo cero falso.
+- Token Governor conserva autoridad pre-ejecucion sobre `maxCostUsd`.
+- El ledger queda persistido y auditable sin secretos.
+
+## Decision 014: V0.4 Cierra Budget Ledger Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.4 queda cerrada despues de implementar y validar por dry-run el Budget Ledger persistible para costo real post-ejecucion.
+
+Razon:
+
+La validacion demostro que Quantico AI OS ya puede conservar `estimatedCostUsd` como costo pre-ejecucion y calcular `actualCostUsd` despues de la respuesta con usage real y snapshot historico de pricing, sin depender de la tabla vigente futura para explicar costos pasados.
+
+Evidencia:
+
+- Execution ID: `exec_v04_dryrun`.
+- Provider/model: OpenAI / `gpt-5-nano`.
+- Estimated input/output tokens: 112 / 30.
+- `estimatedCostUsd`: 0.000018.
+- Actual input/output tokens: 127 / 24.
+- `actualCostUsd`: 0.000016.
+- `costDeltaUsd`: -0.000002.
+- Latencia: 2240ms.
+- `calculationStatus`: `calculated`.
+- Pricing snapshot persistido: `inputPricePerMillion` 0.05 y `outputPricePerMillion` 0.40.
+
+Confirmaciones:
+
+- Cambiar posteriormente la tabla de pricing no modifica la entrada historica.
+- Una ejecucion `approval pending` no crea entrada de ledger.
+- Una ejecucion terminal sin provider crea entrada `not_applicable`.
+- El ledger no persiste prompts, API keys, workspace IDs ni secretos.
+
+Consecuencia:
+
+V0.4 cierra el ciclo economico basico del Kernel. Quedan fuera billing, invoice reconciliation, dashboard, cuotas, fallback, retries, scorecards, optimizacion historica, nuevos providers, cobro, markup y alertas automaticas.
+
+Criterios de aceptacion:
+
+- El ledger persiste entradas calculadas con snapshots de pricing.
+- Los acumulados simples se derivan solo de entradas con `actualCostUsd` calculable.
+- Estados incompletos no representan datos desconocidos como cero.
+- No hay entradas prematuras para ejecuciones no terminales o pendientes de aprobacion.
