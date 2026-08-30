@@ -2,25 +2,39 @@
 
 ## Estado Actual
 
-Fase: V0.2 opened.
+Fase: V0.2 validated.
 
 Version objetivo: V0.2.
 
 Codigo implementado: si.
 
-Estado actual: V0.2 documentalmente abierta.
+Estado actual: V0.2 validated.
 
-Ultimo hito: cierre formal de V0.1.
+Ultimo hito: ejecucion real exitosa del Kernel contra Anthropic.
 
-Provider validado: OpenAI.
+Provider validado V0.1: OpenAI.
 
-Endpoint validado: Responses API.
+Endpoint validado V0.1: Responses API.
 
-Modelo usado: `gpt-5-nano`.
+Modelo usado V0.1: `gpt-5-nano`.
 
-Resultado: `succeeded` / evaluation `pass`.
+Resultado V0.1: `succeeded` / evaluation `pass`.
 
-Tests actuales: 52/52 pass.
+Provider validado V0.2: Anthropic.
+
+Modelo usado V0.2: `claude-haiku-4-5-20251001`.
+
+Resultado V0.2: `succeeded` / evaluation `pass`.
+
+Tokens V0.2: input 202 / output 23.
+
+Costo estimado V0.2: $0.000295.
+
+Latencia V0.2: 1141ms.
+
+Stop reason V0.2: `end_turn`.
+
+Tests actuales: 56/56 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -28,9 +42,22 @@ Commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
 
 V0.1: cerrada y congelada.
 
-V0.2: comienza como fase separada.
+V0.2: validada contra Anthropic real.
 
 Objetivo V0.2: validacion real Anthropic y paridad multi-provider.
+
+Restriccion de diseno V0.2: COST-FIRST POLICY.
+
+Defaults economicos V0.2:
+
+- OpenAI: `gpt-5-nano`, input $0.05 / 1M tokens, output $0.40 / 1M tokens.
+- Anthropic: `claude-haiku-4-5-20251001`, alias `claude-haiku-4-5`, input $1.00 / 1M tokens, output $5.00 / 1M tokens.
+
+Modelos removidos como defaults economicos: `gpt-4.1-mini` y `claude-3-5-haiku-latest`.
+
+Claude Haiku 3.5 no debe usarse como default aunque sea ligeramente mas barato porque esta retirado de Claude API normal.
+
+Presupuestos smoke V0.2: OpenAI `maxCostUsd` 0.001; Anthropic `maxCostUsd` 0.001.
 
 ## Objetivo Del Producto
 
@@ -68,6 +95,7 @@ Excluido:
 - `DECISIONS.md`
 - Skeleton tecnico TypeScript/Node.js
 - Runner manual OpenAI `smoke:openai`
+- Runner manual Anthropic `smoke:anthropic`
 
 ## Supuestos Actuales
 
@@ -101,15 +129,28 @@ La validacion confirmo:
 - Presupuesto de costo/tokens aplicado.
 - Resultado persistido sin incluir secretos.
 
-## Pendiente Para V0.2
+## Cierre V0.2
 
-- Ejecutar el Kernel contra Anthropic real.
-- Mantener el mismo contrato `ProviderAdapter`.
-- Validar input/output tokens, costo, latencia, errores normalizados, evaluacion y persistencia.
-- Confirmar que Router y Token Governor sigan siendo provider-agnostic.
-- Agregar posteriormente runner manual `npm run smoke:anthropic`.
+V0.2 queda cerrada despues de validar una ejecucion real satisfactoria del Kernel contra Anthropic mediante Messages API.
+
+La validacion confirmo:
+
+- Estado final `succeeded`.
+- Evaluacion `pass`.
+- Provider Anthropic ejecutado con `claude-haiku-4-5-20251001`.
+- Input/output tokens: 202 / 23.
+- Costo estimado: $0.000295.
+- Latencia: 1141ms.
+- Stop reason: `end_turn`.
+- COST-FIRST POLICY documentada para tareas simples.
+- Soporte opcional de `ANTHROPIC_WORKSPACE_ID` para API keys identity-linked.
+- Diagnostico seguro Anthropic sin imprimir secretos.
+
+## Pendiente Para Siguiente Fase
+
+- Definir el objetivo de la siguiente fase antes de tocar codigo.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
-- No implementar fallback inteligente, scorecards, retries automaticos ni nuevos providers en V0.2.
+- No implementar fallback inteligente, scorecards, retries automaticos ni nuevos providers sin una decision separada.
 
 ## Criterio De Cierre V0.2
 
@@ -132,6 +173,7 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - Existe commit funcional de validacion real OpenAI: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 - Existe commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
 - V0.2 declara objetivo, alcance y criterio de cierre antes de tocar codigo.
+- V0.2 queda validada contra Anthropic real con estado `succeeded` y evaluacion `pass`.
 - Los riesgos iniciales estan documentados.
-- Los pendientes para V0.2 estan listados.
+- Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

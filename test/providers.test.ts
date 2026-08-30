@@ -157,6 +157,7 @@ test("OpenAI adapter records safe response diagnostics", async () => {
 test("Anthropic adapter normalizes model response", async () => {
   const httpClient = new MockHttpClient(
     jsonResponse({
+      stop_reason: "end_turn",
       content: [{ type: "text", text: "Anthropic normalized response" }],
       usage: { input_tokens: 13, output_tokens: 5 }
     })
@@ -188,6 +189,87 @@ test("Anthropic adapter normalizes model response", async () => {
   assert.equal(httpClient.requests[0]?.url, "https://api.anthropic.com/v1/messages");
 });
 
+test("Anthropic adapter sends workspace header when configured", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      content: [{ type: "text", text: "Anthropic normalized response" }],
+      usage: { input_tokens: 13, output_tokens: 5 }
+    })
+  );
+  const adapter = new AnthropicAdapter({
+    apiKey: "test-anthropic-key",
+    httpClient,
+    workspaceId: "test-workspace-id"
+  });
+
+  await adapter.sendMessage({
+    executionId: "exec_test",
+    model: "claude-test",
+    messages: [{ role: "user", content: "Hello" }]
+  });
+
+  const headers = httpClient.requests[0]?.init.headers as Record<string, string>;
+
+  assert.equal(headers["x-api-key"], "test-anthropic-key");
+  assert.equal(headers["anthropic-version"], "2023-06-01");
+  assert.equal(headers["anthropic-workspace-id"], "test-workspace-id");
+});
+
+test("Anthropic adapter omits workspace header when not configured", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      content: [{ type: "text", text: "Anthropic normalized response" }],
+      usage: { input_tokens: 13, output_tokens: 5 }
+    })
+  );
+  const adapter = new AnthropicAdapter({
+    apiKey: "test-anthropic-key",
+    httpClient
+  });
+
+  await adapter.sendMessage({
+    executionId: "exec_test",
+    model: "claude-test",
+    messages: [{ role: "user", content: "Hello" }]
+  });
+
+  const headers = httpClient.requests[0]?.init.headers as Record<string, string>;
+
+  assert.equal(headers["x-api-key"], "test-anthropic-key");
+  assert.equal(headers["anthropic-version"], "2023-06-01");
+  assert.equal(headers["anthropic-workspace-id"], undefined);
+});
+
+test("Anthropic adapter records safe response diagnostics", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      stop_reason: "end_turn",
+      content: [
+        { type: "thinking" },
+        { type: "text", text: "QUANTICO_ANTHROPIC_OK" }
+      ],
+      usage: { input_tokens: 21, output_tokens: 8 }
+    })
+  );
+  const adapter = new AnthropicAdapter({ apiKey: "test-anthropic-key", httpClient });
+
+  await adapter.sendMessage({
+    executionId: "exec_test",
+    model: "claude-test",
+    messages: [{ role: "user", content: "Hello" }]
+  });
+
+  assert.deepEqual(adapter.getLastDiagnostics(), {
+    httpStatus: 200,
+    stopReason: "end_turn",
+    inputTokens: 21,
+    outputTokens: 8,
+    contentBlockTypes: ["thinking", "text"],
+    textLength: "QUANTICO_ANTHROPIC_OK".length,
+    structuredError: null
+  });
+});
+
 test("provider adapters normalize errors", async () => {
   const httpClient = new MockHttpClient(
     jsonResponse({ error: { type: "invalid_request_error", message: "bad request" } }, 400)
@@ -205,6 +287,37 @@ test("provider adapters normalize errors", async () => {
       assert.ok(error instanceof ProviderAdapterError);
       assert.equal(error.provider, "openai");
       assert.equal(error.model, "gpt-test");
+      assert.equal(error.code, "provider_error");
+      assert.equal(error.statusCode, 400);
+      return true;
+    }
+  );
+  assert.deepEqual(adapter.getLastDiagnostics()?.structuredError, {
+    type: "invalid_request_error",
+    message: "bad request"
+  });
+});
+
+test("Anthropic adapter captures structured provider errors", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse(
+      { error: { type: "invalid_request_error", message: "bad request" } },
+      400
+    )
+  );
+  const adapter = new AnthropicAdapter({ apiKey: "test-anthropic-key", httpClient });
+
+  await assert.rejects(
+    () =>
+      adapter.sendMessage({
+        executionId: "exec_test",
+        model: "claude-test",
+        messages: [{ role: "user", content: "Hello" }]
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ProviderAdapterError);
+      assert.equal(error.provider, "anthropic");
+      assert.equal(error.model, "claude-test");
       assert.equal(error.code, "provider_error");
       assert.equal(error.statusCode, 400);
       return true;

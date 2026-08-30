@@ -206,3 +206,43 @@ Criterios de aceptacion:
 - Model Router y Token Governor se mantienen provider-agnostic.
 - No existe logica especifica de Anthropic fuera de su adapter.
 - El cierre V0.2 requiere una ejecucion real exitosa con evaluacion verificable.
+
+## Decision 010: COST-FIRST POLICY Para V0.2
+
+Estado: aceptada.
+
+Decision:
+
+Quantico AI OS debe priorizar por defecto el modelo de menor costo que cumpla las capacidades necesarias para la tarea.
+
+Defaults economicos V0.2 para tareas simples:
+
+- OpenAI: `gpt-5-nano`, input $0.05 / 1M tokens, output $0.40 / 1M tokens.
+- Anthropic: `claude-haiku-4-5-20251001`, alias `claude-haiku-4-5`, input $1.00 / 1M tokens, output $5.00 / 1M tokens.
+
+`gpt-4.1-mini` y `claude-3-5-haiku-latest` dejan de ser defaults economicos.
+
+Claude Haiku 3.5 no debe usarse como default aunque sea ligeramente mas barato porque esta retirado de Claude API normal.
+
+Razon:
+
+La orquestacion debe demostrar control economico antes de ampliar automatizacion. V0.2 valida paridad multi-provider, por lo que el costo debe ser una restriccion primaria y no una metrica posterior.
+
+Consecuencia:
+
+Tareas simples usan modelos economicos. Modelos premium solo se usan cuando la tarea o capacidad lo justifique explicitamente.
+
+Token Governor debe imponer `maxCostUsd` antes de cada llamada. Si el costo no puede demostrarse antes de ejecutar, la llamada no debe ejecutarse.
+
+No hay retries automaticos, fallback inteligente ni escalamiento automatico a modelos mas caros. Cualquier escalamiento de costo requiere una decision explicita del sistema y, posteriormente, politica configurable.
+
+Cuando varios providers puedan cumplir una tarea simple, se debe priorizar el menor costo estimado compatible con las capacidades requeridas.
+
+Criterios de aceptacion:
+
+- El smoke Anthropic usa el modelo Anthropic mas economico compatible disponible en la configuracion.
+- Cada smoke usa salida minima necesaria y una sola llamada.
+- Cada smoke declara `maxCostUsd` 0.001 antes de llamar al provider.
+- Token Governor bloquea la ejecucion si falta pricing para provider/model.
+- El sistema registra costo estimado y costo real disponible por ejecucion.
+- No se agregan retries automaticos ni escalamiento automatico a modelos mas caros.

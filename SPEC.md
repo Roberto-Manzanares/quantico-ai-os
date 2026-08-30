@@ -278,6 +278,7 @@ Incluido:
 - Validar input tokens, output tokens, costo, latencia, errores normalizados, evaluacion y persistencia.
 - Confirmar que Model Router y Token Governor sigan siendo provider-agnostic.
 - Agregar posteriormente runner manual `npm run smoke:anthropic`.
+- Aplicar COST-FIRST POLICY como restriccion de diseno V0.2.
 
 Fuera de alcance:
 
@@ -291,11 +292,55 @@ Fuera de alcance:
 
 Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to-end y terminar con evaluacion verificable, metricas y persistencia, sin introducir logica especifica de Anthropic fuera de su adapter.
 
+### COST-FIRST POLICY
+
+Quantico AI OS debe priorizar por defecto el modelo de menor costo que cumpla las capacidades necesarias para la tarea.
+
+Reglas:
+
+- Tareas simples deben usar modelos economicos.
+- Modelos premium solo deben usarse cuando la tarea o capacidad lo justifique explicitamente.
+- Token Governor debe imponer presupuesto maximo antes de cada llamada.
+- Ninguna ejecucion puede exceder `maxCostUsd`.
+- No hay retries automaticos.
+- No hay escalamiento automatico a un modelo mas caro.
+- Cualquier escalamiento de costo requiere una decision explicita del sistema y, posteriormente, politica configurable.
+- El sistema debe registrar costo estimado y costo real disponible por ejecucion.
+
+Para el smoke Anthropic:
+
+- Usar el modelo Anthropic mas economico compatible disponible en la configuracion.
+- Solicitar la salida minima necesaria.
+- Ejecutar una sola llamada.
+- Usar presupuesto maximo muy pequeno.
+- Si no puede demostrarse el costo antes de ejecutar, no ejecutar.
+
+Defaults economicos para tareas simples:
+
+- OpenAI: `gpt-5-nano`, input $0.05 / 1M tokens, output $0.40 / 1M tokens.
+- Anthropic: `claude-haiku-4-5-20251001`, alias `claude-haiku-4-5`, input $1.00 / 1M tokens, output $5.00 / 1M tokens.
+
+Modelos removidos como defaults economicos:
+
+- `gpt-4.1-mini`.
+- `claude-3-5-haiku-latest`.
+
+Claude Haiku 3.5 no debe usarse como default aunque sea ligeramente mas barato porque esta retirado de Claude API normal.
+
+Cuando varios providers puedan cumplir una tarea simple, el sistema debe priorizar el menor costo estimado compatible con las capacidades requeridas.
+
+Presupuestos smoke:
+
+- OpenAI: `maxCostUsd` 0.001.
+- Anthropic: `maxCostUsd` 0.001.
+
 ### Criterios De Aceptacion V0.2
 
 - Dado un objetivo simple y criterios de evaluacion verificables, el Kernel ejecuta contra Anthropic real.
 - La ejecucion recorre Context Compiler, Model Router, Token Governor, Human Approval Gate, Anthropic Adapter, Evaluator y State/Memory.
 - La ejecucion registra provider Anthropic, modelo usado, input tokens, output tokens, costo estimado y latencia.
+- Dada una tarea simple, el Model Router selecciona el modelo de menor costo que cumpla capacidades necesarias cuando exista pricing conocido.
+- Dado `maxCostUsd`, Token Governor bloquea cualquier ejecucion que no pueda demostrar costo estimado antes de llamar al provider.
 - El resultado termina en `succeeded` solo si Evaluator devuelve `pass` con criterios verificables.
 - Los errores de Anthropic se normalizan sin filtrar detalles especificos al Orchestrator.
 - Model Router y Token Governor siguen operando sin logica especifica de Anthropic.
