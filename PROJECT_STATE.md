@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.1 validated.
+Fase: V0.2 opened.
 
-Version objetivo: MVP V0.1.
+Version objetivo: V0.2.
 
 Codigo implementado: si.
 
-Estado actual: V0.1 validated.
+Estado actual: V0.2 documentalmente abierta.
 
-Ultimo hito: ejecucion real exitosa del Kernel end-to-end.
+Ultimo hito: cierre formal de V0.1.
 
 Provider validado: OpenAI.
 
@@ -22,9 +22,15 @@ Resultado: `succeeded` / evaluation `pass`.
 
 Tests actuales: 52/52 pass.
 
-Ultimo commit funcional: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
+Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
-Siguiente fase: V0.2.
+Commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
+
+V0.1: cerrada y congelada.
+
+V0.2: comienza como fase separada.
+
+Objetivo V0.2: validacion real Anthropic y paridad multi-provider.
 
 ## Objetivo Del Producto
 
@@ -97,9 +103,17 @@ La validacion confirmo:
 
 ## Pendiente Para V0.2
 
-- Definir el siguiente bloque funcional.
-- Evaluar validacion real de Anthropic si se prioriza paridad de providers.
+- Ejecutar el Kernel contra Anthropic real.
+- Mantener el mismo contrato `ProviderAdapter`.
+- Validar input/output tokens, costo, latencia, errores normalizados, evaluacion y persistencia.
+- Confirmar que Router y Token Governor sigan siendo provider-agnostic.
+- Agregar posteriormente runner manual `npm run smoke:anthropic`.
 - Mantener el alcance fuera de dashboard, WhatsApp, voz, CRM y billing hasta decision explicita.
+- No implementar fallback inteligente, scorecards, retries automaticos ni nuevos providers en V0.2.
+
+## Criterio De Cierre V0.2
+
+Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to-end y terminar con evaluacion verificable, metricas y persistencia, sin introducir logica especifica de Anthropic fuera de su adapter.
 
 ## Riesgos Detectados
 
@@ -116,6 +130,8 @@ La validacion confirmo:
 - Los documentos declaran explicitamente alcance incluido y excluido.
 - Existe skeleton tecnico validado para V0.1.
 - Existe commit funcional de validacion real OpenAI: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
+- Existe commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
+- V0.2 declara objetivo, alcance y criterio de cierre antes de tocar codigo.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para V0.2 estan listados.
 - No se documentan secretos ni valores de `.env`.

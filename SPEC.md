@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre unicamente el MVP V0.1.
+Esta especificacion cubre el MVP V0.1 cerrado y la apertura documental de V0.2.
 
 ## Alcance Del MVP V0.1
 
@@ -256,3 +256,49 @@ No se requiere dashboard para V0.1.
 - La CLI puede ejecutar un objetivo simple y mostrar resultado, estado final, tokens, costo estimado y latencia total.
 - La API puede crear una ejecucion, consultar estado y devolver resultado final.
 - No existe funcionalidad de dashboard, WhatsApp, voz, CRM o billing en V0.1.
+
+## Apertura V0.2
+
+Estado de V0.1: cerrada y congelada.
+
+Commit de cierre V0.1: `36739d1dc9112e629c0e15283ab9697a4f427a37`.
+
+V0.2 comienza como fase separada.
+
+### Objetivo V0.2
+
+Validar Anthropic real y confirmar paridad multi-provider del Kernel.
+
+### Alcance V0.2
+
+Incluido:
+
+- Ejecutar el Kernel contra Anthropic real.
+- Mantener el mismo contrato `ProviderAdapter`.
+- Validar input tokens, output tokens, costo, latencia, errores normalizados, evaluacion y persistencia.
+- Confirmar que Model Router y Token Governor sigan siendo provider-agnostic.
+- Agregar posteriormente runner manual `npm run smoke:anthropic`.
+
+Fuera de alcance:
+
+- Fallback inteligente entre providers.
+- Provider Scorecards.
+- Retries automaticos.
+- Dashboard.
+- Nuevos providers.
+
+### Criterio De Cierre V0.2
+
+Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to-end y terminar con evaluacion verificable, metricas y persistencia, sin introducir logica especifica de Anthropic fuera de su adapter.
+
+### Criterios De Aceptacion V0.2
+
+- Dado un objetivo simple y criterios de evaluacion verificables, el Kernel ejecuta contra Anthropic real.
+- La ejecucion recorre Context Compiler, Model Router, Token Governor, Human Approval Gate, Anthropic Adapter, Evaluator y State/Memory.
+- La ejecucion registra provider Anthropic, modelo usado, input tokens, output tokens, costo estimado y latencia.
+- El resultado termina en `succeeded` solo si Evaluator devuelve `pass` con criterios verificables.
+- Los errores de Anthropic se normalizan sin filtrar detalles especificos al Orchestrator.
+- Model Router y Token Governor siguen operando sin logica especifica de Anthropic.
+- El contrato `ProviderAdapter` no cambia.
+- El runner manual `npm run smoke:anthropic` queda separado de los tests unitarios.
+- No se agregan fallback inteligente, scorecards, retries automaticos, dashboard ni nuevos providers.

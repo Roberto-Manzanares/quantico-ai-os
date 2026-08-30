@@ -177,3 +177,32 @@ Criterios de aceptacion:
 - El contrato `ProviderAdapter` se mantiene estable.
 - El parsing de Responses API extrae `output_text` visible desde la respuesta REST.
 - V0.1 queda cerrada despues de una ejecucion real satisfactoria con presupuesto, evaluacion y persistencia.
+
+## Decision 009: V0.2 Valida Anthropic Real Sin Ampliar Orquestacion
+
+Estado: aceptada.
+
+Decision:
+
+V0.2 se abre como fase separada para validar Anthropic real y confirmar paridad multi-provider usando el mismo Kernel end-to-end.
+
+Razon:
+
+V0.1 ya valido el Kernel contra OpenAI real. El siguiente riesgo tecnico relevante es confirmar que Anthropic funciona bajo el mismo contrato `ProviderAdapter`, sin filtrar detalles del proveedor hacia Orchestrator, Model Router o Token Governor.
+
+Consecuencia:
+
+V0.1 queda cerrada y congelada en el commit `36739d1dc9112e629c0e15283ab9697a4f427a37`.
+
+V0.2 no introduce fallback inteligente, scorecards, retries automaticos, dashboard ni nuevos providers.
+
+El runner manual `npm run smoke:anthropic` se agregara posteriormente como validacion real separada de los tests unitarios.
+
+Criterios de aceptacion:
+
+- Anthropic ejecuta una llamada real mediante el Kernel end-to-end.
+- La ejecucion conserva el contrato `ProviderAdapter` existente.
+- Se registran input tokens, output tokens, costo estimado, latencia, evaluacion, errores normalizados y persistencia.
+- Model Router y Token Governor se mantienen provider-agnostic.
+- No existe logica especifica de Anthropic fuera de su adapter.
+- El cierre V0.2 requiere una ejecucion real exitosa con evaluacion verificable.
