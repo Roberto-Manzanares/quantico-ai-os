@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.17 closed.
+Fase: V0.18 validated.
 
-Version objetivo: V0.17.
+Version objetivo: V0.18.
 
-Codigo implementado: si para V0.17.
+Codigo implementado: si para V0.18.
 
-Estado actual: V0.17 cerrada y congelada.
+Estado actual: V0.18 implementada y validada por dry-run.
 
-Ultimo hito: cierre formal de V0.17 Execution Audit Index Read API.
+Ultimo hito: dry-run final validado de V0.18 Controlled Operational Execution Profile.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 171/171 pass.
+Tests actuales: 177/177 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -211,6 +211,56 @@ Superficie API V0.17: `listExecutionAuditSummaries(options?)` y `getExecutionAud
 Semantica V0.17: cada summary deriva de la Execution persistida y de la timeline V0.16. `getExecutionAuditSummary` devuelve `found` si existe Execution y `not_found` solo si no existe. Si timeline V0.16 devuelve `found` pero `partial` o `inconsistent`, el summary sigue siendo `found` y preserva `timelineDataQuality`. El indice propaga `dataQuality` complete/partial/inconsistent desde las timelines y marca `requiresAttention` de forma deterministica unicamente desde condiciones explicitas: `timelineDataQuality = "partial"` o `"inconsistent"`, o `executionStatus = "failed"`, `"needs_human"` o `"awaiting_approval"`. En cualquier otro caso, `requiresAttention = false`.
 
 Limites V0.17: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries, no modificar ProviderAdapter, no duplicar metricas V0.14/V0.15, no reimplementar la timeline V0.16, no agregar scoring/severidad/heuristicas para `requiresAttention` y no usar evaluacion causal ni metricas V0.14/V0.15 para decidir atencion.
+
+V0.17: cerrada y congelada.
+
+Commit de cierre V0.17: `65b691b30b4b3f678e8843147b7a1a5d082c1f1a`.
+
+V0.18: comienza como fase documental separada.
+
+Titulo V0.18: Controlled Operational Execution Profile.
+
+Objetivo V0.18: definir un perfil operacional minimo para ejecutar objetivos reales de forma controlada, presupuestada y auditable, reutilizando el Kernel existente, V0.16 Execution Audit Timeline y V0.17 Execution Audit Index.
+
+Capacidad nueva V0.18: empaquetar objetivo, restricciones, presupuesto estricto, criterios deterministas, politica de aprobacion, modo de ejecucion y requisitos de auditoria post-ejecucion antes de lanzar una ejecucion real.
+
+Razon V0.18: V0.16 y V0.17 ya permiten inspeccionar ejecuciones persistidas; el siguiente paso hacia operacion real es estandarizar como se lanza una ejecucion controlada, no crear otra capa read-only.
+
+Superficie V0.18: `runControlledExecution(profile)` como operacion futura minima.
+
+Semantica V0.18: `runControlledExecution(profile)` no reimplementa Kernel, Router, Token Governor, Budget Enforcement, Human Approval Gate ni Evaluator. `dry_run` valida configuracion y calcula elegibilidad/costo estimado usando componentes existentes con provider calls = 0; no simula outcome ni marca ejecucion como `succeeded`. `live` delega una sola ejecucion al Kernel existente, nunca salta Human Approval Gate y permite provider call solo si el perfil es valido y los gates existentes lo permiten. La salida operacional combina resultado Kernel, V0.16 timeline y V0.17 audit summary.
+
+Resultados V0.18: `profile_validated`, `profile_rejected`, `dry_run_ready`, `execution_pending_approval`, `execution_completed` y `execution_failed`.
+
+Limites V0.18: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no crear una segunda autoridad operacional, no agregar fallback ni retries implicitos, no agregar dashboard, no introducir nueva base de datos, no modificar ProviderAdapter, no duplicar metricas V0.14/V0.15, no reimplementar timeline V0.16 ni index V0.17, no permitir live sin presupuesto estricto ni criterios deterministas verificables.
+
+V0.18: implementada y validada por dry-run.
+
+## Cierre V0.18
+
+V0.18 queda lista para cierre despues de implementar y validar por dry-run Controlled Operational Execution Profile.
+
+La validacion confirmo:
+
+- Perfil valido -> `profile_validated`.
+- Perfil invalido -> `profile_rejected` pre-provider.
+- `live` sin presupuesto verificable -> `profile_rejected`.
+- `dry_run` usa Context Compiler, Router COST-FIRST y Token Governor.
+- `dry_run` produce provider calls = 0.
+- `dry_run` no simula outcome ni marca `succeeded`.
+- `dry_run_ready` validado.
+- `live` delega una sola ejecucion al Kernel existente.
+- Maximo una provider call por execution attempt.
+- `HIGH` risk -> `execution_pending_approval`.
+- Human Approval Gate no se salta.
+- Post-auditoria reutiliza V0.16 Execution Audit Timeline y V0.17 Execution Audit Summary.
+- `execution_completed` validado.
+- `execution_failed` cubierto por mapeo del Kernel.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- ProviderAdapter intacto.
+- Provider calls reales: 0.
+- Tests: 177/177 pass.
 
 ## Cierre V0.17
 
@@ -709,6 +759,7 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.16 queda validada con dry-run verificable de Execution Audit Timeline Read API, `found`/`not_found`, timeline solo desde evidencia persistida, sources independientes solo con registros independientes, evaluation embebida con `source = "execution"`, orden deterministico timestamp/source/type, `dataQuality` complete/partial/inconsistent, timestamps faltantes no inventados, secretos sanitizados, bug `finalResultLength` corregido, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 164/164 tests.
 - V0.17 declara contrato de Execution Audit Index Read API, listado y consulta de summaries auditables por ejecucion, reutilizacion de V0.16 timeline, `requiresAttention` booleano sin scoring, filtros read-only, orden deterministico y limites sin writes ni autoridad nueva antes de tocar codigo.
 - V0.17 queda validada con dry-run verificable de Execution Audit Index Read API, summary `found`/`not_found`, `timelineDataQuality` preservado, descubrimiento via StateMemory, summaries antes de filtros, `requiresAttention` solo por condiciones explicitas, `limit` al final, orden deterministico, `listExecutions()` read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 171/171 tests.
+- V0.18 declara contrato de Controlled Operational Execution Profile para lanzar ejecuciones reales de forma controlada, presupuestada y auditable, con modo `dry_run`, modo `live`, validacion previa de presupuesto/criterios, uso del Kernel existente, Human Approval obligatorio cuando aplique, maximo una provider call por attempt, estados operacionales explicitos y post-auditoria mediante V0.16/V0.17 antes de tocar codigo.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

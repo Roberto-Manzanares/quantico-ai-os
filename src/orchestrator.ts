@@ -484,7 +484,7 @@ export class Orchestrator {
   }
 }
 
-function determineTaskType(goal: string): TaskType {
+export function determineTaskType(goal: string): TaskType {
   const normalized = goal.toLowerCase();
 
   if (normalized.includes("research") || normalized.includes("investiga")) {

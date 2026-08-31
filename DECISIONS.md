@@ -1754,3 +1754,200 @@ Criterios de aceptacion:
 - `limit` se aplica al final.
 - Lecturas repetidas no modifican State/Memory.
 - Router COST-FIRST y `advisorAuthority` permanecen intactos.
+
+## Decision 041: V0.18 Abre Controlled Operational Execution Profile
+
+Estado: aceptada.
+
+Decision:
+
+V0.18 se abre como fase documental para definir un perfil operacional minimo de ejecucion controlada.
+
+Razon:
+
+V0.16 y V0.17 ya cubren inspeccion cronologica y descubrimiento de ejecuciones persistidas. El siguiente incremento minimo hacia operacion real no debe ser otra capa read-only; debe definir como lanzar una ejecucion real con presupuesto estricto, criterios deterministas y post-auditoria usando las capacidades existentes.
+
+Capacidad nueva:
+
+Un `ControlledOperationalExecutionProfile` empaqueta antes de ejecutar:
+
+- Objetivo humano.
+- `taskType` opcional.
+- Restricciones.
+- Presupuesto estricto.
+- Criterios de evaluacion deterministas.
+- Politica de aprobacion.
+- Modo de ejecucion.
+- Requisitos de auditoria post-ejecucion.
+
+Superficie definida:
+
+- `runControlledExecution(profile)`.
+
+`runControlledExecution(profile)` no reimplementa Kernel, Router, Token Governor, Budget Enforcement, Human Approval Gate ni Evaluator.
+
+Modos:
+
+- `dry_run`: valida configuracion y calcula elegibilidad/costo estimado usando componentes existentes, sin llamar providers.
+- `live`: delega una sola ejecucion al Kernel existente solo si el perfil es valido y los gates actuales lo permiten.
+
+`dry_run` no debe simular un outcome ni marcar una ejecucion como `succeeded`; provider calls = 0.
+
+`live` nunca puede saltarse Human Approval Gate.
+
+Campos minimos del perfil:
+
+- `profileId`.
+- `goal`.
+- `taskType` opcional.
+- `projectId` opcional salvo cuando exista presupuesto de proyecto.
+- `constraints`.
+- `evaluationCriteria`.
+- `approvalPolicy`.
+- `budgets`.
+- `auditRequirements`.
+- `mode`.
+
+Perfil invalido implica rechazo pre-provider y comportamiento fail-closed.
+
+Budgets minimos:
+
+- `maxCostUsd`.
+- `maxOutputTokens`.
+- `maxTotalTokens`.
+- `expectedOutputTokens`.
+
+Budgets opcionales:
+
+- `maxExecutionCostUsd`.
+- `maxProjectCostUsd`.
+
+Si `maxProjectCostUsd` existe, `projectId` debe existir.
+
+Semantica:
+
+V0.18 no agrega gates nuevos dentro del Kernel. Token Governor y Budget Enforcement conservan autoridad final.
+
+Presupuesto ausente o no verificable en `live` implica rechazo pre-provider.
+
+Para `live`, el orden operacional futuro es:
+
+1. Validar perfil.
+2. Ejecutar Kernel existente.
+3. Leer V0.16 Execution Audit Timeline.
+4. Leer V0.17 Execution Audit Summary.
+5. Devolver resultado operacional compuesto.
+
+Toda ejecucion `live` debe incluir criterios deterministas verificables. Si faltan, se rechaza antes de llamar al provider.
+
+V0.18 no crea una segunda autoridad operacional.
+
+La post-auditoria reutiliza V0.16 Execution Audit Timeline y V0.17 Execution Audit Index. No duplica su logica.
+
+Estados/resultados operacionales:
+
+- `profile_validated`.
+- `profile_rejected`.
+- `dry_run_ready`.
+- `execution_pending_approval`.
+- `execution_completed`.
+- `execution_failed`.
+
+La salida operacional debe incluir:
+
+- `executionId`.
+- `status`.
+- `provider`.
+- `model`.
+- `estimatedCostUsd`.
+- `actualCostUsd` cuando exista.
+- `evaluationStatus`.
+- `auditSummary`.
+- `timelineStatus`.
+- `reason`.
+
+Limites:
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No crear una segunda autoridad operacional.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No duplicar metricas V0.14/V0.15.
+- No reimplementar timeline V0.16.
+- No reimplementar index V0.17.
+- No ejecutar provider calls durante la fase documental.
+- No permitir live sin presupuesto estricto.
+- No permitir live sin criterios deterministas verificables.
+- No permitir que `live` salte Human Approval Gate.
+- No simular outcome ni estado `succeeded` en `dry_run`.
+
+Criterios de aceptacion:
+
+- Existe contrato de `ControlledOperationalExecutionProfile`.
+- `dry_run` valida configuracion sin provider calls.
+- `dry_run` no simula outcome ni marca ejecucion como `succeeded`.
+- `live` usa el Kernel existente sin modificar Router COST-FIRST ni `advisorAuthority`.
+- `live` delega una sola ejecucion al Kernel existente.
+- `live` nunca salta Human Approval Gate.
+- Perfil invalido se rechaza pre-provider y fail-closed.
+- Perfiles live sin presupuesto minimo se rechazan antes de provider.
+- Perfiles live sin criterios deterministas verificables se rechazan antes de provider.
+- `maxProjectCostUsd` sin `projectId` se rechaza antes de provider.
+- Los resultados operacionales distinguen `profile_validated`, `profile_rejected`, `dry_run_ready`, `execution_pending_approval`, `execution_completed` y `execution_failed`.
+- La salida operacional incluye resultado Kernel, timeline V0.16 y summary V0.17.
+- La post-auditoria reutiliza V0.16/V0.17 y no duplica logica.
+- Cada execution attempt hace maximo una provider call.
+- No hay fallback automatico ni retries.
+
+## Decision 042: V0.18 Cierra Controlled Operational Execution Profile
+
+Estado: aceptada.
+
+Decision:
+
+V0.18 queda cerrada despues de implementar y validar por dry-run `runControlledExecution(profile)`.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede lanzar ejecuciones controladas mediante un perfil operacional minimo, sin reimplementar el Kernel ni duplicar Router, Token Governor, Budget Enforcement, Human Approval Gate, Evaluator, Timeline o Audit Summary.
+
+Evidencia validada:
+
+- Perfil valido -> `profile_validated`.
+- Perfil invalido -> `profile_rejected` pre-provider.
+- `live` sin presupuesto verificable -> `profile_rejected`.
+- `dry_run` usa Context Compiler, Router COST-FIRST y Token Governor.
+- `dry_run` produce provider calls = 0.
+- `dry_run` no simula outcome ni marca `succeeded`.
+- `dry_run_ready` validado.
+- `live` delega una sola ejecucion al Kernel existente.
+- Maximo una provider call por execution attempt.
+- `HIGH` risk -> `execution_pending_approval`.
+- Human Approval Gate no se salta.
+- Post-auditoria reutiliza V0.16 Execution Audit Timeline y V0.17 Execution Audit Summary.
+- `execution_completed` validado.
+- `execution_failed` cubierto por mapeo del Kernel.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- ProviderAdapter intacto.
+- Provider calls reales: 0.
+- Tests: 177/177 pass.
+
+Consecuencia:
+
+`runControlledExecution(profile)` queda como superficie operacional minima para ejecuciones controladas. `dry_run` valida elegibilidad y costo estimado sin provider calls; `live` delega al Kernel existente y devuelve resultado compuesto con post-auditoria. La funcion no concede autoridad nueva, no cambia Router COST-FIRST, no cambia ProviderAdapter, no agrega fallback/retries y no introduce dashboard ni nueva base de datos.
+
+Criterios de aceptacion:
+
+- `runControlledExecution(profile)` rechaza perfiles invalidos pre-provider.
+- `dry_run` no llama providers, no simula outcome y no marca ejecuciones como `succeeded`.
+- `live` valida presupuesto y criterios deterministas antes de delegar al Kernel.
+- `live` no puede saltarse Human Approval Gate.
+- Los estados operacionales distinguen validacion, rechazo, dry-run listo, aprobacion pendiente, completado y fallido.
+- Post-auditoria reutiliza V0.16/V0.17.
+- Router COST-FIRST, `advisorAuthority` y ProviderAdapter permanecen intactos.

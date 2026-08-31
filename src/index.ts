@@ -6,6 +6,7 @@ export * from "./components/authority-runtime-safety-metrics.js";
 export * from "./components/budget-enforcement.js";
 export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
+export * from "./components/controlled-operational-execution.js";
 export * from "./components/evaluator.js";
 export * from "./components/execution-audit-index.js";
 export * from "./components/execution-audit-timeline.js";
@@ -29,6 +30,7 @@ import { SkeletonAuthorityRuntimeSafetyMetrics } from "./components/authority-ru
 import { SkeletonBudgetEnforcementGate } from "./components/budget-enforcement.js";
 import { SkeletonBudgetLedger } from "./components/budget-ledger.js";
 import { SkeletonEvaluator } from "./components/evaluator.js";
+import { SkeletonControlledOperationalExecution } from "./components/controlled-operational-execution.js";
 import { SkeletonExecutionAuditIndex } from "./components/execution-audit-index.js";
 import { SkeletonExecutionAuditTimeline } from "./components/execution-audit-timeline.js";
 import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
@@ -80,6 +82,33 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     anthropic: new AnthropicAdapter()
   };
 
+  const orchestrator = new Orchestrator({
+    contextCompiler,
+    modelRouter,
+    tokenGovernor,
+    budgetEnforcementGate,
+    budgetLedger,
+    providerScorecard,
+    shadowRoutingAdvisor,
+    shadowRoutingAnalysisReporter,
+    limitedShadowAuthorityPolicy,
+    authorityDecisionAuditLog,
+    costTable: pricingTable,
+    stateMemory,
+    humanApprovalGate,
+    evaluator,
+    providers
+  });
+  const controlledOperationalExecution = new SkeletonControlledOperationalExecution({
+    stateMemory,
+    contextCompiler,
+    modelRouter,
+    tokenGovernor,
+    orchestrator,
+    executionAuditTimeline,
+    executionAuditIndex
+  });
+
   return {
     stateMemory,
     contextCompiler,
@@ -96,25 +125,10 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     authorityRuntimeSafetyMetrics,
     executionAuditTimeline,
     executionAuditIndex,
+    controlledOperationalExecution,
     humanApprovalGate,
     evaluator,
     providers,
-    orchestrator: new Orchestrator({
-      contextCompiler,
-      modelRouter,
-      tokenGovernor,
-      budgetEnforcementGate,
-      budgetLedger,
-      providerScorecard,
-      shadowRoutingAdvisor,
-      shadowRoutingAnalysisReporter,
-      limitedShadowAuthorityPolicy,
-      authorityDecisionAuditLog,
-      costTable: pricingTable,
-      stateMemory,
-      humanApprovalGate,
-      evaluator,
-      providers
-    })
+    orchestrator
   };
 }

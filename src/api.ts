@@ -5,6 +5,8 @@ import type {
   AuthorityRuntimeSafetyMetricsExecutionReadResult,
   AuthorityRuntimeSafetyMetricsReadResult,
   AuthorityRuntimeOutcomeComparison,
+  ControlledExecutionProfile,
+  ControlledExecutionResult,
   Execution,
   ExecutionAuditSummaryListResult,
   ExecutionAuditSummaryOptions,
@@ -37,6 +39,7 @@ export interface QuanticoApi {
     options?: ExecutionAuditSummaryOptions
   ): Promise<ExecutionAuditSummaryListResult>;
   getExecutionAuditSummary(executionId: string): Promise<ExecutionAuditSummaryReadResult>;
+  runControlledExecution(profile: ControlledExecutionProfile): Promise<ControlledExecutionResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -147,6 +150,11 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
     },
     async getExecutionAuditSummary(executionId: string): Promise<ExecutionAuditSummaryReadResult> {
       return system.executionAuditIndex.getExecutionAuditSummary(executionId);
+    },
+    async runControlledExecution(
+      profile: ControlledExecutionProfile
+    ): Promise<ControlledExecutionResult> {
+      return system.controlledOperationalExecution.runControlledExecution(profile);
     }
   };
 }

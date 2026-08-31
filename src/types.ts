@@ -683,6 +683,79 @@ export type ExecutionAuditSummaryReadResult =
       reason: string;
     };
 
+export type ControlledExecutionMode = "dry_run" | "live";
+
+export type ControlledExecutionStatus =
+  | "profile_validated"
+  | "profile_rejected"
+  | "dry_run_ready"
+  | "execution_pending_approval"
+  | "execution_completed"
+  | "execution_failed";
+
+export interface ControlledExecutionBudgets {
+  maxCostUsd?: number;
+  maxExecutionCostUsd?: number;
+  maxProjectCostUsd?: number;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  maxTotalTokens?: number;
+  expectedOutputTokens?: number;
+}
+
+export interface ControlledExecutionAuditRequirements {
+  requireTimeline: boolean;
+  requireAuditSummary: boolean;
+}
+
+export interface ControlledExecutionProfile {
+  profileId?: string;
+  goal: string;
+  projectId?: string;
+  constraints: ExecutionConstraints;
+  evaluationCriteria: EvaluationCriterion[];
+  approvalPolicy: ApprovalPolicy;
+  budgets: ControlledExecutionBudgets;
+  auditRequirements: ControlledExecutionAuditRequirements;
+  mode: ControlledExecutionMode;
+  contextRefs?: string[];
+}
+
+export interface ControlledExecutionDryRun {
+  taskType: TaskType;
+  compiledContextId: string;
+  estimatedInputTokens: number;
+  expectedOutputTokens: number;
+  provider: ProviderName;
+  model: string;
+  estimatedCostUsd: number | null;
+  routingReason: string;
+  tokenDecisionReason: string;
+}
+
+export interface ControlledExecutionPostAudit {
+  timelineStatus: ExecutionAuditTimelineReadResult["status"];
+  timelineDataQuality?: ExecutionAuditTimelineDataQuality;
+  auditSummaryStatus: ExecutionAuditSummaryReadResult["status"];
+  requiresAttention?: boolean;
+  reason: string;
+}
+
+export interface ControlledExecutionResult {
+  status: ControlledExecutionStatus;
+  profileValidationStatus: "profile_validated" | "profile_rejected";
+  profileId?: string;
+  executionId?: string;
+  provider?: ProviderName;
+  model?: string;
+  estimatedCostUsd?: number | null;
+  actualCostUsd?: number | null;
+  evaluationStatus?: EvaluationStatus;
+  dryRun?: ControlledExecutionDryRun;
+  postAudit?: ControlledExecutionPostAudit;
+  reason: string;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

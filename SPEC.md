@@ -2095,6 +2095,212 @@ Para consulta por `executionId`, `not_found` significa que no hay decision de au
 - `advisorAuthority` no cambia.
 - No se agregan provider calls, writes, dashboard, fallback, retries, ML ni nueva DB.
 
+## Apertura V0.18
+
+Titulo: V0.18 - Controlled Operational Execution Profile.
+
+Estado de V0.17: cerrada y congelada.
+
+Commit de cierre V0.17: `65b691b30b4b3f678e8843147b7a1a5d082c1f1a`.
+
+V0.18 comienza como fase documental separada.
+
+### Objetivo V0.18
+
+Definir un perfil operacional minimo para ejecutar objetivos reales de forma controlada, presupuestada y auditable, reutilizando el Kernel existente, V0.16 Execution Audit Timeline y V0.17 Execution Audit Index.
+
+### Capacidad Nueva
+
+V0.18 introduce una forma estandar de declarar una ejecucion operacional controlada antes de llamar al Kernel:
+
+- Objetivo humano.
+- `taskType` explicito o inferido por Orchestrator.
+- Restricciones.
+- Presupuesto estricto.
+- Criterios de evaluacion deterministas.
+- Politica de aprobacion.
+- Modo de ejecucion.
+- Requisitos de auditoria post-ejecucion.
+
+El perfil no cambia como decide el Router, no concede autoridad nueva y no reemplaza el flujo existente. Solo empaqueta las condiciones minimas para que una ejecucion real sea segura, reproducible y auditable.
+
+### Razon Del Incremento
+
+V0.16 y V0.17 ya permiten inspeccionar ejecuciones persistidas. El siguiente paso hacia operacion real no debe crear otra capa read-only; debe definir como lanzar ejecuciones reales bajo un contrato operacional uniforme que obligue presupuesto, criterios verificables y evidencia auditable desde el inicio.
+
+### Superficie V0.18
+
+Operacion futura minima:
+
+- `runControlledExecution(profile)`.
+
+`runControlledExecution(profile)` no reimplementa Kernel, Router, Token Governor, Budget Enforcement, Human Approval Gate ni Evaluator.
+
+El perfil debe producir una ejecucion normal del Kernel y devolver:
+
+- `executionId`.
+- `status`.
+- `provider`.
+- `model`.
+- `estimatedCostUsd`.
+- `actualCostUsd` cuando exista.
+- `evaluationStatus`.
+- `auditSummary`.
+- `timelineStatus`.
+- `reason`.
+
+Estados/resultados operacionales:
+
+- `profile_validated`: el perfil es valido para el modo solicitado.
+- `profile_rejected`: el perfil es invalido y se rechaza antes de provider, fail-closed.
+- `dry_run_ready`: el perfil `dry_run` es elegible y tiene costo estimado verificable, sin crear outcome de ejecucion.
+- `execution_pending_approval`: el Kernel quedo pausado por Human Approval Gate.
+- `execution_completed`: el Kernel termino y la post-auditoria pudo consultarse.
+- `execution_failed`: el Kernel fallo o la post-auditoria no pudo completarse de forma auditable.
+
+### Contrato Del Perfil
+
+Campos minimos explicitos:
+
+- `profileId`.
+- `goal`.
+- `taskType` opcional.
+- `projectId` opcional salvo cuando exista presupuesto de proyecto.
+- `constraints`.
+- `evaluationCriteria`.
+- `approvalPolicy`.
+- `budgets`.
+- `auditRequirements`.
+- `mode`.
+
+`mode` puede ser:
+
+- `dry_run`: no ejecuta provider; valida que el perfil tenga presupuesto, criterios y restricciones suficientes para una ejecucion controlada; calcula elegibilidad y costo estimado usando componentes existentes.
+- `live`: delega una sola ejecucion al Kernel existente y permite provider call solo si todos los gates existentes lo permiten.
+
+`dry_run` no debe simular un outcome, no debe crear una ejecucion como `succeeded` y siempre debe mantener provider calls = 0.
+
+`live` nunca puede saltarse Human Approval Gate.
+
+Perfil invalido implica `profile_rejected` antes de provider y comportamiento fail-closed.
+
+### Budgets
+
+El perfil debe declarar como minimo:
+
+- `maxCostUsd` para la llamada individual.
+- `maxOutputTokens`.
+- `maxTotalTokens`.
+- `expectedOutputTokens`.
+
+Opcionalmente:
+
+- `maxExecutionCostUsd`.
+- `maxProjectCostUsd`.
+
+Si `maxProjectCostUsd` existe, `projectId` debe existir.
+
+V0.18 no cambia Token Governor ni Budget Enforcement. Ambos siguen siendo autoridad de presupuesto.
+
+Presupuesto ausente o no verificable en `live` implica rechazo pre-provider.
+
+### Evaluation Criteria
+
+Toda ejecucion `live` debe incluir criterios deterministas verificables.
+
+Si faltan criterios verificables, el perfil debe rechazarse antes de llamar al provider.
+
+Esto evita que una ejecucion operacional termine en `succeeded` solo por respuesta no vacia.
+
+### Audit Requirements
+
+El perfil debe exigir post-auditoria usando:
+
+- V0.16 Execution Audit Timeline.
+- V0.17 Execution Audit Index.
+
+Campos minimos de post-auditoria:
+
+- `timelineFound`.
+- `timelineDataQuality`.
+- `auditSummaryFound`.
+- `requiresAttention`.
+- `attentionReasons`.
+
+Si la post-auditoria falla o no puede leerse, la ejecucion no se reintenta ni se relanza. Se reporta como resultado operacional con razon auditable.
+
+La post-auditoria reutiliza V0.16 Execution Audit Timeline y V0.17 Execution Audit Index. No duplica su logica.
+
+### Orden Operacional
+
+Para `live`:
+
+1. Validar perfil.
+2. Ejecutar Kernel existente.
+3. Leer V0.16 timeline para `executionId`.
+4. Leer V0.17 audit summary para `executionId`.
+5. Devolver resultado operacional compuesto.
+
+V0.18 no agrega ningun gate nuevo dentro del Kernel.
+
+V0.18 no crea una segunda autoridad operacional. Router COST-FIRST, Authority Runtime, Token Governor, Budget Enforcement, Human Approval Gate y Evaluator conservan sus responsabilidades existentes.
+
+Cada execution attempt mantiene maximo una provider call. No hay retries ni fallback implicitos.
+
+### Limites V0.18
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No duplicar metricas V0.14/V0.15.
+- No reimplementar timeline V0.16.
+- No reimplementar index V0.17.
+- No ejecutar provider calls durante la fase documental.
+- No permitir ejecuciones live sin presupuesto estricto.
+- No permitir ejecuciones live sin criterios deterministas verificables.
+- No crear una segunda autoridad operacional.
+- No permitir que `live` salte Human Approval Gate.
+- No simular outcome ni estado `succeeded` en `dry_run`.
+
+### Casos Limite V0.18
+
+- Perfil sin `maxCostUsd`: rechazar antes de provider.
+- Perfil sin `maxOutputTokens`, `maxTotalTokens` o `expectedOutputTokens`: rechazar antes de provider.
+- Perfil `live` con presupuesto ausente o no verificable: `profile_rejected` antes de provider.
+- Perfil con `maxProjectCostUsd` sin `projectId`: rechazar antes de provider.
+- Perfil `live` sin `evaluationCriteria` verificables: rechazar antes de provider.
+- Perfil con provider/model preferido bloqueado: conserva reglas existentes del Router.
+- Token Governor reject: no provider call.
+- Budget Enforcement reject: no provider call.
+- Human Approval needs approval: pausa sin provider call y conserva auditoria de estado.
+- Provider error: resultado operacional refleja error normalizado y timeline/index disponibles cuando existan.
+- Post-auditoria no encontrada para execution persistida: reportar falla operacional auditable sin retry.
+- `requiresAttention = true` en V0.17: devolverlo sin intentar resolver automaticamente.
+
+### Criterios De Aceptacion V0.18
+
+- Existe contrato documental de `ControlledOperationalExecutionProfile`.
+- El perfil valida presupuesto minimo antes de ejecutar.
+- El perfil valida criterios deterministas antes de ejecutar en modo `live`.
+- `dry_run` valida configuracion sin llamar providers.
+- `dry_run` no simula outcome ni marca ejecucion como `succeeded`.
+- `live` usa el Kernel existente sin modificar Router COST-FIRST ni `advisorAuthority`.
+- `live` delega una sola ejecucion al Kernel existente.
+- `live` nunca salta Human Approval Gate.
+- Perfil invalido se rechaza pre-provider y fail-closed.
+- Token Governor y Budget Enforcement conservan autoridad final.
+- La salida operacional incluye resultado Kernel, timeline V0.16 y summary V0.17.
+- La post-auditoria reutiliza V0.16/V0.17 y no duplica logica.
+- Cada execution attempt hace maximo una provider call.
+- No hay fallback automatico ni retries.
+- No se agregan dashboards, billing, nuevos providers, ML ni nueva DB.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
 ## Apertura V0.17
 
 Titulo: V0.17 - Execution Audit Index Read API.
