@@ -848,3 +848,79 @@ Criterios de aceptacion:
 - `advisorAuthority` permanece siempre `none`.
 - No se modifica Router COST-FIRST ni ProviderAdapter.
 - No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.
+
+## Decision 025: V0.10 Abre Shadow Routing Analysis Report
+
+Estado: aceptada.
+
+Decision:
+
+V0.10 se abre como fase separada para generar un reporte deterministico sobre el Shadow Routing Evaluation Log.
+
+Razon:
+
+V0.9 conserva historial de matches, divergences e insufficient data. Antes de considerar cualquier autoridad limitada futura, Quantico AI OS necesita un reporte auditable que mida patrones y declare si la evidencia historica es suficiente o insuficiente.
+
+Consecuencia:
+
+El reporte debe leer solo datos persistidos existentes y producir:
+
+- Conteos y tasas de match/divergence.
+- Patrones observables asociados a divergencias.
+- Evidencia disponible.
+- `evidenceStatus`: `sufficient` o `insufficient`.
+- Razones y metricas auditables.
+- `advisorAuthority` sin cambios.
+
+El reporte no toma decisiones automaticas y no modifica ejecuciones reales.
+
+Quedan fuera cambios al Router COST-FIRST, cambios a `advisorAuthority`, provider calls, fallback, retries, dashboard, IA evaluadora, autoridad limitada, ranking opaco, nueva base de datos y nuevos providers.
+
+Criterios de aceptacion:
+
+- El reporte lee el Shadow Routing Evaluation Log persistido.
+- El reporte calcula patrones y tasas deterministicas.
+- El reporte identifica condiciones observables de divergencia usando solo datos persistidos.
+- El reporte declara `evidenceStatus` con razon auditable.
+- El reporte no modifica Router COST-FIRST ni `advisorAuthority`.
+- No se ejecutan provider calls ni decisiones automaticas.
+
+## Decision 026: V0.10 Cierra Shadow Routing Analysis Report Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.10 queda cerrada despues de implementar y validar por dry-run el Shadow Routing Analysis Report.
+
+Razon:
+
+El reporte ya puede leer el Shadow Routing Evaluation Log persistido, resumir patrones de match/divergence y declarar evidencia suficiente o insuficiente con reglas deterministicas y auditables, sin cambiar el Router COST-FIRST ni otorgar autoridad al Advisor.
+
+Evidencia validada:
+
+- `evidenceStatus` `insufficient` y `sufficient` verificados.
+- `minimumEvaluationsRequired`: 5.
+- Requiere `matchCount > 0`.
+- Requiere `divergenceCount > 0`.
+- Requiere `insufficientDataRate < 0.5`.
+- Divergencias completas con `differenceReason`, `metricsUsed` y `shadowRecommendation`.
+- Patrones `actualSelection -> shadowRecommendation` correctos.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls: 0.
+- Tests: 122/122 pass.
+
+Reporte suficiente validado:
+
+- `totalEvaluations`: 5.
+- `matchCount`: 3.
+- `divergenceCount`: 2.
+- `insufficientDataCount`: 0.
+- `matchRate`: 0.6.
+- `divergenceRate`: 0.4.
+- `evidenceStatus`: `sufficient`.
+
+Consecuencia:
+
+Quantico AI OS puede analizar evidencia shadow acumulada y producir un reporte read-only para decidir, en una fase futura, si tiene sentido considerar autoridad limitada. V0.10 no modifica routing real, no ejecuta llamadas adicionales, no introduce fallback, retries, dashboard, IA evaluadora ni aprendizaje automatico.

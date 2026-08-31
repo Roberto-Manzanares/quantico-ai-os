@@ -1197,3 +1197,113 @@ Las entradas deben ser auditables y no deben persistir prompts, API keys, worksp
 - No se agregan provider calls adicionales.
 - No se modifica Router COST-FIRST.
 - No se agregan fallback, retries, dashboard, ranking opaco, aprendizaje automatico ni nuevos providers.
+
+## Apertura V0.10
+
+Titulo: V0.10 - Shadow Routing Analysis Report.
+
+Estado de V0.9: cerrada y congelada.
+
+Commit de cierre V0.9: `4ca05b43aebc053f90bfbd3193b259e3f5c77f3a`.
+
+V0.10 comienza como fase separada.
+
+### Objetivo V0.10
+
+Generar un reporte deterministico y auditable a partir del Shadow Routing Evaluation Log para resumir patrones de match/divergence, identificar condiciones observables asociadas a divergencias y declarar si existe evidencia suficiente para considerar autoridad limitada en una fase futura.
+
+### Alcance V0.10
+
+Incluido:
+
+- Leer `Shadow Routing Evaluation Log`.
+- Resumir patrones de match/divergence.
+- Identificar condiciones observables asociadas a divergencias.
+- Calcular evidencia disponible.
+- Declarar `evidenceStatus`: `sufficient` o `insufficient`.
+- Incluir razones y metricas auditables.
+- Usar solo datos persistidos existentes.
+
+Fuera de alcance:
+
+- Cambios al Router COST-FIRST.
+- Cambios a `advisorAuthority`.
+- Provider calls.
+- Fallback.
+- Retries.
+- Dashboard.
+- IA evaluadora.
+- Decisiones automaticas desde el reporte.
+- Autoridad limitada en V0.10.
+- Nueva base de datos.
+- Nuevos providers.
+
+### Contrato Del Shadow Routing Analysis Report
+
+Entrada minima:
+
+- Entradas persistidas de `Shadow Routing Evaluation Log`.
+
+Salida minima:
+
+- `generatedAt`.
+- `totalEvaluations`.
+- `matchCount`.
+- `divergenceCount`.
+- `insufficientDataCount`.
+- `matchRate`.
+- `divergenceRate`.
+- `observedDivergencePatterns`.
+- `evidenceStatus`: `sufficient` o `insufficient`.
+- `evidenceReason`.
+- `metricsUsed`.
+- `advisorAuthority`: siempre `none`.
+
+`observedDivergencePatterns` debe basarse solo en campos persistidos, por ejemplo:
+
+- Provider/model seleccionado por COST-FIRST.
+- Provider/model recomendado por shadow.
+- `dataQuality`.
+- Diferencias de metricas usadas por el advisor.
+- Frecuencia de divergence por par `actualSelection -> shadowRecommendation`.
+
+### Semantica De Evidencia V0.10
+
+`evidenceStatus` no autoriza cambios de routing. Solo declara si el historial disponible es suficiente para discutir una fase futura con autoridad limitada.
+
+V0.10 debe considerar `insufficient` cuando:
+
+- No hay entradas historicas.
+- Hay entradas insuficientes para observar patrones.
+- Predominan entradas `insufficient_data`.
+- Las divergencias no tienen razones o metricas auditables.
+
+V0.10 puede declarar `sufficient` solo si:
+
+- Existe un minimo documentado de evaluaciones historicas.
+- Las entradas tienen razones y metricas auditables.
+- Hay suficientes matches/divergences para describir patrones sin extrapolacion opaca.
+
+El umbral minimo exacto debe ser configurable o declarado explicitamente en la implementacion V0.10. No debe derivarse de IA.
+
+### Casos Limite V0.10
+
+- Si no hay logs, el reporte devuelve conteos cero y `evidenceStatus` `insufficient`.
+- Si todos los logs son `insufficient_data`, el reporte devuelve `insufficient`.
+- Si hay divergencias sin `differenceReason`, el reporte marca evidencia incompleta.
+- Si faltan metricas usadas en entradas con recomendacion shadow, el reporte marca evidencia incompleta.
+- Si hay datos parciales, el reporte conserva esa condicion en las razones.
+- El reporte no debe llamar OpenAI, Anthropic ni otros providers.
+- El reporte no debe cambiar Router COST-FIRST ni `advisorAuthority`.
+- El reporte no debe ordenar providers como ranking automatico de seleccion.
+
+### Criterios De Aceptacion V0.10
+
+- El reporte lee solo datos persistidos existentes.
+- El reporte calcula conteos y tasas de match/divergence de forma deterministica.
+- El reporte identifica patrones observables de divergencia usando datos persistidos.
+- El reporte declara `evidenceStatus` con razon auditable.
+- El reporte incluye metricas usadas y condiciones de calidad de datos.
+- `advisorAuthority` permanece `none`.
+- El reporte no modifica Router COST-FIRST ni ejecuciones reales.
+- No se agregan provider calls, fallback, retries, dashboard, IA evaluadora, ranking opaco ni decisiones automaticas.

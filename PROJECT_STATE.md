@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.9 ready to close.
+Fase: V0.10 ready to close.
 
-Version objetivo: V0.9.
+Version objetivo: V0.10.
 
 Codigo implementado: si.
 
-Estado actual: V0.9 implementada y validada por dry-run.
+Estado actual: V0.10 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Shadow Routing Evaluation Log.
+Ultimo hito: dry-run final de Shadow Routing Analysis Report.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 114/114 pass.
+Tests actuales: 122/122 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -101,6 +101,14 @@ V0.9: implementada y validada por dry-run.
 Titulo V0.9: Shadow Routing Evaluation Log.
 
 Objetivo V0.9: persistir y consultar un historial auditable de comparaciones entre seleccion COST-FIRST real y recomendacion shadow, sin autoridad de seleccion.
+
+Commit de cierre V0.9: `4ca05b43aebc053f90bfbd3193b259e3f5c77f3a`.
+
+V0.10: implementada y validada por dry-run.
+
+Titulo V0.10: Shadow Routing Analysis Report.
+
+Objetivo V0.10: leer el Shadow Routing Evaluation Log y generar un reporte deterministico de patrones de match/divergence y evidencia disponible, sin cambiar routing ni autoridad.
 
 Defaults economicos V0.2:
 
@@ -347,10 +355,40 @@ Agregados validados:
 - `matchRate`: 0.333333.
 - `divergenceRate`: 0.333333.
 
+## Cierre V0.10
+
+V0.10 queda lista para cierre despues de implementar y validar por dry-run el Shadow Routing Analysis Report.
+
+La validacion confirmo:
+
+- `evidenceStatus` `insufficient` y `sufficient` verificados.
+- `minimumEvaluationsRequired`: 5.
+- Requiere `matchCount > 0`.
+- Requiere `divergenceCount > 0`.
+- Requiere `insufficientDataRate < 0.5`.
+- Divergencias completas con `differenceReason`, `metricsUsed` y `shadowRecommendation`.
+- Patrones `actualSelection -> shadowRecommendation` correctos.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls: 0.
+- Tests: 122/122 pass.
+
+Reporte suficiente validado:
+
+- `totalEvaluations`: 5.
+- `matchCount`: 3.
+- `divergenceCount`: 2.
+- `insufficientDataCount`: 0.
+- `matchRate`: 0.6.
+- `divergenceRate`: 0.4.
+- `evidenceStatus`: `sufficient`.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.10 documentalmente antes de tocar codigo.
-- Mantener Router COST-FIRST sin cambios.
+- Definir V0.11 documentalmente antes de tocar codigo.
+- Mantener `advisorAuthority` sin cambios hasta decision explicita.
+- Mantener Router COST-FIRST sin cambios hasta decision explicita.
+- No convertir reportes shadow en autoridad operativa sin una fase separada y criterios verificables.
 - No agregar ranking automatico, fallback ni retries.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
 - Mantener `maxExecutionCostUsd` y `maxProjectCostUsd` como presupuestos acumulados opcionales.
@@ -401,6 +439,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.8 queda validada con dry-run verificable de Shadow Routing Advisor, match/divergence, precedencia deterministica, `advisorAuthority` `none`, cero provider calls y 106/106 tests.
 - V0.9 declara contrato de Shadow Routing Evaluation Log, persistencia, lectura historica, agregados match/divergence, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.9 queda validada con dry-run verificable de Shadow Routing Evaluation Log, match/divergence/insufficient_data, lectura historica, filtro por executionId, persistencia tras reinicio, agregados y 114/114 tests.
+- V0.10 declara contrato de Shadow Routing Analysis Report, evidencia disponible, patrones observables, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.10 queda validada con dry-run verificable de Shadow Routing Analysis Report, estados `insufficient` y `sufficient`, evidencia suficiente con 5 evaluaciones, Router COST-FIRST intacto, cero provider calls y 122/122 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

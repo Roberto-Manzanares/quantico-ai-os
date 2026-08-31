@@ -387,6 +387,43 @@ export interface ShadowRoutingEvaluationLogSummary {
   divergenceRate: number;
 }
 
+export type ShadowRoutingEvidenceStatus = "sufficient" | "insufficient";
+
+export interface ShadowRoutingDivergencePattern {
+  actualProvider: ProviderName;
+  actualModel: string;
+  shadowProvider: ProviderName;
+  shadowModel: string;
+  count: number;
+  averageShadowEvaluationPassRate: number | null;
+  averageShadowSuccessRate: number | null;
+  averageShadowActualCostUsd: number | null;
+  averageShadowLatencyMs: number | null;
+  dataQuality: ShadowAdvisorDataQuality;
+  reasons: string[];
+}
+
+export interface ShadowRoutingAnalysisReport {
+  generatedAt: Date;
+  totalEvaluations: number;
+  matchCount: number;
+  divergenceCount: number;
+  insufficientDataCount: number;
+  matchRate: number;
+  divergenceRate: number;
+  observedDivergencePatterns: ShadowRoutingDivergencePattern[];
+  evidenceStatus: ShadowRoutingEvidenceStatus;
+  evidenceReason: string;
+  metricsUsed: {
+    minimumEvaluationsRequired: number;
+    matchCount: number;
+    divergenceCount: number;
+    insufficientDataRate: number;
+    divergencesWithAuditableReasonAndMetrics: number;
+  };
+  advisorAuthority: "none";
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
