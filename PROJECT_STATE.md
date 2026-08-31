@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.15 closed.
+Fase: V0.16 closed.
 
-Version objetivo: V0.15.
+Version objetivo: V0.16.
 
-Codigo implementado: si para V0.15.
+Codigo implementado: si para V0.16.
 
-Estado actual: V0.15 cerrada y congelada.
+Estado actual: V0.16 cerrada y congelada.
 
-Ultimo hito: cierre formal de V0.15 Authority Runtime Safety Metrics Read API.
+Ultimo hito: cierre formal de V0.16 Execution Audit Timeline Read API.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 158/158 pass.
+Tests actuales: 164/164 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -175,6 +175,48 @@ Semantica V0.15: `not_found` solo aplica cuando no existe evidencia de autoridad
 Limites V0.15: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries.
 
 V0.15: cerrada y congelada.
+
+Commit de cierre V0.15: `504722a75f71cd2f6e854303016ce4ef730d473a`.
+
+V0.16: comienza como fase documental separada.
+
+Titulo V0.16: Execution Audit Timeline Read API.
+
+Objetivo V0.16: definir una Read API minima para consultar la linea de tiempo auditable de una ejecucion usando solo datos persistidos existentes.
+
+Razon V0.16: V0.14/V0.15 ya exponen metricas agregadas de seguridad de autoridad; V0.16 agrega trazabilidad cronologica por ejecucion sin duplicar esas metricas ni ampliar autoridad.
+
+Superficie API V0.16: `getExecutionAuditTimeline(executionId)`.
+
+Fuentes V0.16: Execution persistida, execution events, Authority Decision Audit Log entries, Budget Ledger entries, pending approval cuando exista, evaluacion y metricas persistidas.
+
+Semantica V0.16: `found` aplica si existe la Execution persistida; `not_found` solo aplica si no existe. Cada timeline item debe provenir de evidencia realmente persistida. No se fabrican eventos derivados como registros independientes. Evaluation, approval o selection embebidos en Execution pueden representarse con `source = "execution"`. Sources especificos como `authority_audit`, `budget_ledger`, `event`, `approval` o `evaluation` solo se usan con registros persistidos independientes. Si una fuente no tiene timestamp confiable, no se inventa; se refleja en `dataQuality` y `reason`.
+
+Limites V0.16: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries.
+
+## Cierre V0.16
+
+V0.16 queda lista para cierre despues de implementar y validar por dry-run Execution Audit Timeline Read API.
+
+La validacion confirmo:
+
+- `found` si existe Execution persistida.
+- `not_found` solo si no existe Execution.
+- Timeline basado unicamente en evidencia persistida.
+- Evaluation embebida usa `source = "execution"`.
+- Sources independientes solo aparecen con registros independientes.
+- Orden deterministico por timestamp, source y type.
+- `dataQuality` distingue `complete`, `partial` e `inconsistent`.
+- `inconsistent` no resuelve contradicciones automaticamente.
+- Timestamps faltantes no se inventan y degradan `dataQuality` / `reason`.
+- `effectiveSelection`, `authorityDecision`, ledger, `evaluationStatus` y tokens se preservan cuando hay evidencia.
+- Secretos, prompts completos, API keys y workspace IDs se sanitizan.
+- State/Memory sin cambios durante lectura.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- Bug de `finalResultLength` corregido y cubierto por test.
+- Tests: 164/164 pass.
 
 ## Cierre V0.15
 
@@ -621,6 +663,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.14 queda validada con dry-run verificable de Authority Runtime Safety Metrics, metricas globales, fail-closed, costo adicional autorizado, outcomes no contrafactuales, `insufficient_data`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 154/154 tests.
 - V0.15 declara contrato de Authority Runtime Safety Metrics Read API, reporte completo, consulta por `executionId`, `found` / `not_found` auditable donde `found` no implica datos completos, preservacion de `dataQuality` e `insufficient_data`, reutilizacion exclusiva de `AuthorityRuntimeSafetyMetricsV014` y limites sin writes ni autoridad nueva antes de tocar codigo.
 - V0.15 queda validada con dry-run verificable de Authority Runtime Safety Metrics Read API, full report `found`, query por `executionId` `found` con evidencia parcial, `not_found` solo sin evidencia de autoridad, preservacion de `partial`, `insufficient_data`, `actualOutcome`, `counterfactualOutcome = "unavailable"`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 158/158 tests.
+- V0.16 declara contrato de Execution Audit Timeline Read API, consulta cronologica por `executionId`, `found` si existe Execution, `not_found` solo si no existe, items respaldados por evidencia persistida, sources especificos solo con registros independientes, `dataQuality` complete/partial/inconsistent, timestamps no inventados, proteccion de secretos y limites sin writes ni autoridad nueva antes de tocar codigo.
+- V0.16 queda validada con dry-run verificable de Execution Audit Timeline Read API, `found`/`not_found`, timeline solo desde evidencia persistida, sources independientes solo con registros independientes, evaluation embebida con `source = "execution"`, orden deterministico timestamp/source/type, `dataQuality` complete/partial/inconsistent, timestamps faltantes no inventados, secretos sanitizados, bug `finalResultLength` corregido, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 164/164 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

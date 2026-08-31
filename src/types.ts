@@ -602,6 +602,39 @@ export type AuthorityRuntimeSafetyMetricsExecutionReadResult =
       reason: string;
     };
 
+export type ExecutionAuditTimelineSource =
+  | "execution"
+  | "event"
+  | "authority_audit"
+  | "budget_ledger"
+  | "approval"
+  | "evaluation";
+
+export type ExecutionAuditTimelineDataQuality = "complete" | "partial" | "inconsistent";
+
+export interface ExecutionAuditTimelineItem {
+  timestamp: Date | null;
+  source: ExecutionAuditTimelineSource;
+  type: string;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export type ExecutionAuditTimelineReadResult =
+  | {
+      status: "found";
+      executionId: string;
+      executionStatus: ExecutionStatus;
+      timeline: ExecutionAuditTimelineItem[];
+      dataQuality: ExecutionAuditTimelineDataQuality;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      executionId: string;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

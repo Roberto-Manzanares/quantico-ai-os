@@ -2094,3 +2094,150 @@ Para consulta por `executionId`, `not_found` significa que no hay decision de au
 - Router COST-FIRST permanece intacto.
 - `advisorAuthority` no cambia.
 - No se agregan provider calls, writes, dashboard, fallback, retries, ML ni nueva DB.
+
+## Apertura V0.16
+
+Titulo: V0.16 - Execution Audit Timeline Read API.
+
+Estado de V0.15: cerrada y congelada.
+
+Commit de cierre V0.15: `504722a75f71cd2f6e854303016ce4ef730d473a`.
+
+V0.16 comienza como fase documental separada.
+
+### Objetivo V0.16
+
+Definir una Read API minima para consultar la linea de tiempo auditable de una ejecucion usando solo datos persistidos existentes, sin cambiar routing, autoridad, presupuesto ni ejecucion.
+
+### Razon Del Incremento
+
+V0.14 y V0.15 exponen metricas agregadas de seguridad de autoridad. El siguiente incremento minimo de observabilidad no debe duplicar esas metricas; debe permitir inspeccionar una ejecucion concreta en orden cronologico para responder que paso, que decision se tomo, con que seleccion efectiva, que costo se registro y cual fue el resultado.
+
+### Fuentes V0.16
+
+La linea de tiempo debe leer solo:
+
+- Execution persistida.
+- Execution events persistidos.
+- Authority Decision Audit Log entries del `executionId`.
+- Budget Ledger entries del `executionId`.
+- Pending approval step persistido cuando exista.
+- Evaluacion y metricas ya persistidas en Execution.
+
+No debe ejecutar provider calls ni generar nuevos eventos.
+
+### Superficie API V0.16
+
+Operacion minima:
+
+- `getExecutionAuditTimeline(executionId)`.
+
+Respuesta `found`:
+
+- `status: "found"`.
+- `executionId`.
+- `executionStatus`.
+- `timeline`.
+- `dataQuality`.
+- `reason`.
+
+Respuesta `not_found`:
+
+- `status: "not_found"`.
+- `executionId`.
+- `reason` auditable.
+
+`status = "found"` aplica si existe la Execution persistida para ese `executionId`.
+
+`status = "not_found"` solo aplica cuando no existe la Execution persistida para ese `executionId`.
+
+### Contrato De Timeline
+
+Cada item de `timeline` debe ser serializable y auditable:
+
+- `timestamp`.
+- `source`: `execution` | `event` | `authority_audit` | `budget_ledger` | `approval` | `evaluation`.
+- `type`.
+- `summary`.
+- `details`.
+
+Cada timeline item debe provenir de evidencia realmente persistida.
+
+No se deben fabricar eventos derivados como si fueran registros independientes.
+
+Si evaluation, approval o selection solo existen como campos dentro de Execution, pueden representarse en timeline, pero deben marcar `source = "execution"`.
+
+Se debe usar `source` especifico como `authority_audit`, `budget_ledger`, `event`, `approval` o `evaluation` solo cuando exista un registro persistido independiente que lo respalde.
+
+`details` debe contener solo campos auditables necesarios. No debe persistir ni exponer prompts completos, API keys, workspace IDs ni secretos.
+
+Si una fuente no tiene timestamp confiable, no se debe inventar uno. La ausencia de timestamp confiable debe reflejarse en `dataQuality` y `reason`.
+
+### Ordenamiento
+
+La linea de tiempo debe ordenarse por:
+
+1. `timestamp` ascendente.
+2. `source` en orden deterministico cuando haya empate.
+3. `type` en orden lexicografico.
+
+El orden debe ser estable y verificable.
+
+### Data Quality
+
+`dataQuality` debe ser:
+
+- `complete`: existe Execution y las fuentes esperadas para el estado final estan presentes de forma consistente.
+- `partial`: existe Execution, pero faltan fuentes esperadas o hay informacion incompleta no critica.
+- `inconsistent`: existen datos contradictorios entre Execution, events, authority audit o budget ledger.
+
+La razon debe explicar por que la linea de tiempo es `complete`, `partial` o `inconsistent`.
+
+`inconsistent` no debe intentar resolver automaticamente cual fuente es correcta. Debe exponer la contradiccion de forma auditable y dejar la resolucion a una revision posterior.
+
+### Limites V0.16
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No ejecutar provider calls.
+- No hacer writes.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No agregar fallback.
+- No agregar retries.
+- No modificar ProviderAdapter.
+- No duplicar metricas de V0.14/V0.15; la linea de tiempo es trazabilidad por ejecucion, no un nuevo reporte agregado.
+
+### Casos Limite V0.16
+
+- Execution inexistente: `not_found` con razon auditable.
+- Execution existente sin eventos: `found` con `dataQuality = "partial"`.
+- Execution con authority audit: timeline incluye decision y `effectiveSelection`.
+- Execution con budget ledger: timeline incluye costo estimado/real disponible y `calculationStatus`.
+- Execution `needs_human`: timeline incluye pending approval si existe.
+- Execution con evaluacion: timeline incluye outcome de evaluacion.
+- Datos contradictorios entre ledger y execution metrics: `dataQuality = "inconsistent"`.
+- Evaluation, approval o selection disponibles solo dentro de Execution: timeline puede incluirlos con `source = "execution"`.
+- Registro independiente de authority audit o budget ledger: timeline usa `source = "authority_audit"` o `source = "budget_ledger"` respectivamente.
+- Fuente sin timestamp confiable: no se inventa timestamp; `dataQuality` y `reason` reflejan la limitacion.
+- Lecturas repetidas: no modifican State/Memory.
+
+### Criterios De Aceptacion V0.16
+
+- `getExecutionAuditTimeline(executionId)` devuelve `found` para execution persistida.
+- `getExecutionAuditTimeline(executionId)` devuelve `not_found` solo cuando no existe Execution persistida.
+- Cada timeline item proviene de evidencia realmente persistida.
+- La timeline combina fuentes persistidas existentes sin escribir estado ni fabricar eventos derivados.
+- La timeline se ordena de forma deterministica.
+- La timeline incluye authority audit, ledger, approval y evaluation cuando existan para el `executionId`.
+- Sources especificos solo se usan cuando existe registro persistido independiente que los respalde.
+- Campos embebidos en Execution se representan con `source = "execution"`.
+- La salida preserva `effectiveSelection`, `authorityDecision`, costos ledger y evaluation status cuando existan.
+- `dataQuality` distingue `complete`, `partial` e `inconsistent` con razon auditable.
+- `inconsistent` no resuelve automaticamente contradicciones entre fuentes.
+- Fuentes sin timestamp confiable degradan `dataQuality` o quedan explicadas en `reason`; no se inventan timestamps.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+- Router COST-FIRST permanece intacto.
+- `advisorAuthority` no cambia.
+- No se agregan provider calls, writes, dashboard, fallback, retries, ML ni nueva DB.

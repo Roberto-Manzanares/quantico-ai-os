@@ -6,6 +6,7 @@ import type {
   AuthorityRuntimeSafetyMetricsReadResult,
   AuthorityRuntimeOutcomeComparison,
   Execution,
+  ExecutionAuditTimelineReadResult,
   ExecutionRequest,
   ExecutionResultMetrics,
   ExecutionStatus,
@@ -28,6 +29,7 @@ export interface QuanticoApi {
   getAuthorityRuntimeSafetyMetricsForExecution(
     executionId: string
   ): Promise<AuthorityRuntimeSafetyMetricsExecutionReadResult>;
+  getExecutionAuditTimeline(executionId: string): Promise<ExecutionAuditTimelineReadResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -127,6 +129,9 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
         dataQuality,
         reason: reasonForExecutionRead(executionId, dataQuality, outcomeComparisons)
       };
+    },
+    async getExecutionAuditTimeline(executionId: string): Promise<ExecutionAuditTimelineReadResult> {
+      return system.executionAuditTimeline.getExecutionAuditTimeline(executionId);
     }
   };
 }
