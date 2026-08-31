@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.14 closed.
+Fase: V0.15 closed.
 
-Version objetivo: V0.14.
+Version objetivo: V0.15.
 
-Codigo implementado: si para V0.14.
+Codigo implementado: si para V0.15.
 
-Estado actual: V0.14 cerrada y congelada.
+Estado actual: V0.15 cerrada y congelada.
 
-Ultimo hito: cierre formal de V0.14 Authority Runtime Safety Metrics.
+Ultimo hito: cierre formal de V0.15 Authority Runtime Safety Metrics Read API.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 154/154 pass.
+Tests actuales: 158/158 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -159,6 +159,41 @@ Semantica V0.14: para cada `executionId`, solo se atribuye outcome a la `effecti
 Limites V0.14: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no agregar fallback, retries, dashboard, ML ni nueva base de datos.
 
 V0.14: cerrada y congelada.
+
+Commit de cierre V0.14: `eaadcecd3fb74c8b303b3eed5ca308bd18159f50`.
+
+V0.15: comienza como fase documental separada.
+
+Titulo V0.15: Authority Runtime Safety Metrics Read API.
+
+Objetivo V0.15: definir una Read API minima para consultar el reporte completo de Authority Runtime Safety Metrics y vistas por `executionId` cuando aplique, reutilizando `AuthorityRuntimeSafetyMetricsV014`.
+
+Superficie API V0.15: `getAuthorityRuntimeSafetyMetrics()` para reporte completo y `getAuthorityRuntimeSafetyMetricsForExecution(executionId)` para consulta auditable por ejecucion.
+
+Semantica V0.15: `not_found` solo aplica cuando no existe evidencia de autoridad para un `executionId`; `found` aplica cuando existe evidencia de autoridad aunque el reporte sea parcial o contenga `comparisonStatus = "insufficient_data"`. El `reason` debe explicar si el resultado es completo, parcial o insuficiente. La implementacion debe reutilizar exclusivamente `AuthorityRuntimeSafetyMetricsV014` para calcular metricas.
+
+Limites V0.15: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries.
+
+V0.15: cerrada y congelada.
+
+## Cierre V0.15
+
+V0.15 queda lista para cierre despues de implementar y validar por dry-run Authority Runtime Safety Metrics Read API.
+
+La validacion confirmo:
+
+- Full report devuelve `found`.
+- Query por `executionId` devuelve `found` cuando existe evidencia de autoridad aunque `dataQuality` sea `partial`.
+- `not_found` ocurre solo cuando no existe evidencia de autoridad.
+- `partial` e `insufficient_data` se preservan.
+- `actualOutcome` se preserva.
+- `counterfactualOutcome = "unavailable"` se preserva.
+- Read API reutiliza `AuthorityRuntimeSafetyMetricsV014` sin duplicar logica de metricas.
+- State/Memory sin cambios.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- Tests: 158/158 pass.
 
 ## Cierre V0.14
 
@@ -584,6 +619,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.13 queda validada con dry-run verificable de Authority Runtime Integration, shadow allowed aplicado sobre `effectiveSelection`, fallos fail-closed/audit-failed, rechazos sin rerouting, reanudacion humana conservando seleccion efectiva, audit/ledger sin duplicados, Router COST-FIRST intacto y 148/148 tests.
 - V0.14 declara contrato de Authority Runtime Safety Metrics, metricas read-only sobre decisiones reales de autoridad, comparaciones de outcome solo con evidencia ejecutada suficiente, `actualOutcome`, `counterfactualOutcome = "unavailable"` para alternativas no ejecutadas, agregados descriptivos no causales, `dataQuality`, razones auditables y limites sin ampliar autoridad antes de tocar codigo.
 - V0.14 queda validada con dry-run verificable de Authority Runtime Safety Metrics, metricas globales, fail-closed, costo adicional autorizado, outcomes no contrafactuales, `insufficient_data`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 154/154 tests.
+- V0.15 declara contrato de Authority Runtime Safety Metrics Read API, reporte completo, consulta por `executionId`, `found` / `not_found` auditable donde `found` no implica datos completos, preservacion de `dataQuality` e `insufficient_data`, reutilizacion exclusiva de `AuthorityRuntimeSafetyMetricsV014` y limites sin writes ni autoridad nueva antes de tocar codigo.
+- V0.15 queda validada con dry-run verificable de Authority Runtime Safety Metrics Read API, full report `found`, query por `executionId` `found` con evidencia parcial, `not_found` solo sin evidencia de autoridad, preservacion de `partial`, `insufficient_data`, `actualOutcome`, `counterfactualOutcome = "unavailable"`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 158/158 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

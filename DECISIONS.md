@@ -1338,3 +1338,115 @@ Criterios de aceptacion:
 - COST-FIRST y `advisorAuthority` permanecen intactos.
 - Outcomes no ejecutados permanecen como `counterfactualOutcome = "unavailable"`.
 - Las comparaciones sin evidencia ejecutada quedan como `comparisonStatus = "insufficient_data"`.
+
+## Decision 035: V0.15 Abre Authority Runtime Safety Metrics Read API
+
+Estado: aceptada.
+
+Decision:
+
+V0.15 se abre como fase documental para definir una Read API minima sobre Authority Runtime Safety Metrics.
+
+Razon:
+
+V0.14 ya calcula metricas de seguridad de autoridad como reporte read-only. El siguiente paso natural es exponer esas metricas de forma consultable y auditable sin duplicar el calculo, sin escribir estado y sin ampliar autoridad.
+
+Superficie API definida:
+
+- `getAuthorityRuntimeSafetyMetrics()`: devuelve el reporte completo producido por `AuthorityRuntimeSafetyMetricsV014`.
+- `getAuthorityRuntimeSafetyMetricsForExecution(executionId)`: devuelve la vista aplicable a una ejecucion cuando exista evidencia persistida.
+
+Semantica de respuesta:
+
+- El reporte completo devuelve `status = "found"` con `report` y razon auditable.
+- La consulta por `executionId` devuelve `status = "found"` cuando existen Authority Decision Audit entries para esa ejecucion.
+- La consulta por `executionId` devuelve `status = "not_found"` cuando no hay evidencia de autoridad persistida para esa ejecucion.
+- `not_found` debe incluir razon auditable y no debe inventar un reporte vacio para una ejecucion inexistente.
+
+`not_found` solo aplica cuando no existe evidencia de autoridad para ese `executionId`.
+
+`found` aplica cuando existe evidencia de autoridad, aunque el reporte resulte parcial o incluya `comparisonStatus = "insufficient_data"`.
+
+`found` no significa datos completos. La completitud se expresa exclusivamente mediante `dataQuality`, `comparisonStatus` y `reason`.
+
+El `reason` debe explicar si el resultado es `complete`, `partial` o `insufficient_data`.
+
+Datos preservados:
+
+- `dataQuality`.
+- `comparisonStatus = "insufficient_data"` cuando aplique.
+- `actualOutcome` solo para la `effectiveSelection` realmente ejecutada.
+- `counterfactualOutcome = "unavailable"` para alternativas no ejecutadas.
+- Razones auditables.
+
+Arquitectura:
+
+La implementacion futura debe reutilizar exclusivamente `AuthorityRuntimeSafetyMetricsV014` como fuente unica de calculo. La Read API solo debe filtrar o envolver la salida para responder consultas; no debe recalcular metricas con logica paralela.
+
+Limites:
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No ejecutar provider calls.
+- No hacer writes.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No agregar fallback.
+- No agregar retries.
+- No modificar ProviderAdapter.
+
+Criterios de aceptacion:
+
+- La API expone lectura del reporte completo de Authority Runtime Safety Metrics.
+- La API permite consultar por `executionId` cuando aplique.
+- La consulta por `executionId` devuelve `found` o `not_found` con razon auditable.
+- `not_found` solo se usa cuando no existe evidencia de autoridad para ese `executionId`.
+- `found` se usa cuando existe evidencia de autoridad, aunque el reporte sea parcial o contenga `insufficient_data`.
+- La salida preserva `dataQuality`.
+- La salida preserva `comparisonStatus = "insufficient_data"` cuando aplique.
+- La salida preserva `counterfactualOutcome = "unavailable"` para alternativas no ejecutadas.
+- El `reason` explica si el resultado es completo, parcial o insuficiente.
+- La implementacion reutiliza exclusivamente `AuthorityRuntimeSafetyMetricsV014`.
+- Las lecturas no modifican State/Memory.
+- Router COST-FIRST permanece intacto y `advisorAuthority` no cambia.
+
+## Decision 036: V0.15 Cierra Authority Runtime Safety Metrics Read API Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.15 queda cerrada despues de implementar y validar por dry-run la Read API minima para Authority Runtime Safety Metrics.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede exponer lectura auditable del reporte V0.14 completo y por `executionId` sin duplicar la logica de metricas, sin escribir estado, sin provider calls y sin modificar autoridad ni Router COST-FIRST.
+
+Evidencia validada:
+
+- Full report devuelve `found`.
+- Query por `executionId` devuelve `found` cuando existe evidencia de autoridad aunque `dataQuality` sea `partial`.
+- `not_found` ocurre solo cuando no existe evidencia de autoridad.
+- `partial` e `insufficient_data` se preservan.
+- `actualOutcome` se preserva.
+- `counterfactualOutcome = "unavailable"` se preserva.
+- Read API reutiliza `AuthorityRuntimeSafetyMetricsV014` sin duplicar logica de metricas.
+- State/Memory sin cambios.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- Tests: 158/158 pass.
+
+Consecuencia:
+
+Authority Runtime Safety Metrics queda disponible mediante una superficie API minima read-only. Esta API no concede autoridad nueva, no recalcula routing, no escribe en persistencia y no introduce dashboard, fallback, retries ni nueva base de datos.
+
+Criterios de aceptacion:
+
+- La Read API envuelve o filtra el reporte de `AuthorityRuntimeSafetyMetricsV014`.
+- `found` no implica datos completos.
+- `not_found` solo significa ausencia de evidencia de autoridad para el `executionId`.
+- `dataQuality`, `comparisonStatus`, `actualOutcome` y `counterfactualOutcome` se preservan.
+- Lecturas repetidas no modifican State/Memory.
+- Router COST-FIRST y `advisorAuthority` permanecen intactos.

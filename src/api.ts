@@ -1,6 +1,10 @@
 import type {
   ApprovalCommand,
   ApprovalCommandResult,
+  AuthorityRuntimeSafetyDataQuality,
+  AuthorityRuntimeSafetyMetricsExecutionReadResult,
+  AuthorityRuntimeSafetyMetricsReadResult,
+  AuthorityRuntimeOutcomeComparison,
   Execution,
   ExecutionRequest,
   ExecutionResultMetrics,
@@ -20,6 +24,10 @@ export interface QuanticoApi {
   getResultAndMetrics(id: string): Promise<ExecutionResultMetrics | undefined>;
   listProviderScorecards(): Promise<ProviderScorecardSummary>;
   getProviderScorecard(provider: ProviderName, model: string): Promise<ProviderScorecardLookupResult>;
+  getAuthorityRuntimeSafetyMetrics(): Promise<AuthorityRuntimeSafetyMetricsReadResult>;
+  getAuthorityRuntimeSafetyMetricsForExecution(
+    executionId: string
+  ): Promise<AuthorityRuntimeSafetyMetricsExecutionReadResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -82,6 +90,73 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
         status: "found",
         scorecard
       };
+    },
+    async getAuthorityRuntimeSafetyMetrics(): Promise<AuthorityRuntimeSafetyMetricsReadResult> {
+      const report = await system.authorityRuntimeSafetyMetrics.generate();
+
+      return {
+        status: "found",
+        report,
+        reason: `Authority runtime safety metrics report generated with ${report.dataQuality} dataQuality.`
+      };
+    },
+    async getAuthorityRuntimeSafetyMetricsForExecution(
+      executionId: string
+    ): Promise<AuthorityRuntimeSafetyMetricsExecutionReadResult> {
+      const auditEntries = await system.stateMemory.listAuthorityDecisionAuditEntries(executionId);
+
+      if (auditEntries.length === 0) {
+        return {
+          status: "not_found",
+          executionId,
+          reason: `Authority runtime safety metrics not found for ${executionId}: no authority evidence is persisted for this execution.`
+        };
+      }
+
+      const report = await system.authorityRuntimeSafetyMetrics.generate();
+      const outcomeComparisons = report.outcomeComparisons.filter(
+        (comparison) => comparison.executionId === executionId
+      );
+      const dataQuality = dataQualityForExecution(report.dataQuality, outcomeComparisons);
+
+      return {
+        status: "found",
+        executionId,
+        report,
+        outcomeComparisons,
+        dataQuality,
+        reason: reasonForExecutionRead(executionId, dataQuality, outcomeComparisons)
+      };
     }
   };
+}
+
+function dataQualityForExecution(
+  reportDataQuality: AuthorityRuntimeSafetyDataQuality,
+  outcomeComparisons: AuthorityRuntimeOutcomeComparison[]
+): AuthorityRuntimeSafetyDataQuality {
+  if (
+    Array.isArray(outcomeComparisons) &&
+    outcomeComparisons.some((comparison) => comparison.comparisonStatus === "insufficient_data")
+  ) {
+    return "partial";
+  }
+
+  return reportDataQuality === "insufficient" ? "partial" : reportDataQuality;
+}
+
+function reasonForExecutionRead(
+  executionId: string,
+  dataQuality: AuthorityRuntimeSafetyDataQuality,
+  outcomeComparisons: AuthorityRuntimeOutcomeComparison[]
+): string {
+  const hasInsufficientData =
+    Array.isArray(outcomeComparisons) &&
+    outcomeComparisons.some((comparison) => comparison.comparisonStatus === "insufficient_data");
+
+  if (hasInsufficientData) {
+    return `Authority runtime safety metrics found for ${executionId} with ${dataQuality} dataQuality and insufficient_data outcome evidence.`;
+  }
+
+  return `Authority runtime safety metrics found for ${executionId} with ${dataQuality} dataQuality.`;
 }

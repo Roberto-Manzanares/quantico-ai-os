@@ -581,6 +581,27 @@ export interface AuthorityRuntimeSafetyMetricsReport {
   reasons: string[];
 }
 
+export interface AuthorityRuntimeSafetyMetricsReadResult {
+  status: "found";
+  report: AuthorityRuntimeSafetyMetricsReport;
+  reason: string;
+}
+
+export type AuthorityRuntimeSafetyMetricsExecutionReadResult =
+  | {
+      status: "found";
+      executionId: string;
+      report: AuthorityRuntimeSafetyMetricsReport;
+      outcomeComparisons: AuthorityRuntimeOutcomeComparison[];
+      dataQuality: AuthorityRuntimeSafetyDataQuality;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      executionId: string;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
