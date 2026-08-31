@@ -7,6 +7,7 @@ export * from "./components/budget-enforcement.js";
 export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
 export * from "./components/evaluator.js";
+export * from "./components/execution-audit-index.js";
 export * from "./components/execution-audit-timeline.js";
 export * from "./components/human-approval-gate.js";
 export * from "./components/limited-shadow-authority-policy.js";
@@ -28,6 +29,7 @@ import { SkeletonAuthorityRuntimeSafetyMetrics } from "./components/authority-ru
 import { SkeletonBudgetEnforcementGate } from "./components/budget-enforcement.js";
 import { SkeletonBudgetLedger } from "./components/budget-ledger.js";
 import { SkeletonEvaluator } from "./components/evaluator.js";
+import { SkeletonExecutionAuditIndex } from "./components/execution-audit-index.js";
 import { SkeletonExecutionAuditTimeline } from "./components/execution-audit-timeline.js";
 import { SkeletonHumanApprovalGate } from "./components/human-approval-gate.js";
 import { SkeletonLimitedShadowAuthorityPolicy } from "./components/limited-shadow-authority-policy.js";
@@ -70,6 +72,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   const authorityDecisionAuditLog = new SkeletonAuthorityDecisionAuditLog(stateMemory);
   const authorityRuntimeSafetyMetrics = new SkeletonAuthorityRuntimeSafetyMetrics(stateMemory);
   const executionAuditTimeline = new SkeletonExecutionAuditTimeline(stateMemory);
+  const executionAuditIndex = new SkeletonExecutionAuditIndex(stateMemory, executionAuditTimeline);
   const humanApprovalGate = new SkeletonHumanApprovalGate();
   const evaluator = new SkeletonEvaluator();
   const providers = options.providers ?? {
@@ -92,6 +95,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     authorityDecisionAuditLog,
     authorityRuntimeSafetyMetrics,
     executionAuditTimeline,
+    executionAuditIndex,
     humanApprovalGate,
     evaluator,
     providers,

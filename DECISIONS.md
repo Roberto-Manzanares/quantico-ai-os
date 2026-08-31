@@ -1594,3 +1594,163 @@ Criterios de aceptacion:
 - La salida mantiene datos auditables y sanitiza contenido sensible.
 - Lecturas repetidas no modifican State/Memory.
 - Router COST-FIRST y `advisorAuthority` permanecen intactos.
+
+## Decision 039: V0.17 Abre Execution Audit Index Read API
+
+Estado: aceptada.
+
+Decision:
+
+V0.17 se abre como fase documental para definir una Read API minima de indice auditable de ejecuciones.
+
+Razon:
+
+V0.16 permite consultar la timeline de una ejecucion concreta, pero requiere conocer el `executionId`. El siguiente incremento minimo de observabilidad operativa es listar ejecuciones persistidas con un resumen auditable para descubrir cuales existen, cuales requieren atencion y cuales tienen evidencia parcial o inconsistente, sin duplicar metricas ni ampliar autoridad.
+
+Contrato definido:
+
+- Operacion `listExecutionAuditSummaries(options?)`.
+- Operacion `getExecutionAuditSummary(executionId)`.
+- Summaries derivados de Execution persistida y V0.16 Execution Audit Timeline.
+- `found` para summary individual si existe Execution persistida.
+- `not_found` solo si no existe Execution persistida.
+- Indice read-only con `dataQuality` agregada desde timelines incluidas.
+
+Summary por ejecucion:
+
+- `executionId`.
+- `projectId` cuando exista.
+- `executionStatus`.
+- `createdAt`.
+- `updatedAt`.
+- `timelineDataQuality`.
+- `timelineItemCount`.
+- `sourcesPresent`.
+- `hasAuthorityAudit`.
+- `hasBudgetLedger`.
+- `hasEvaluation`.
+- `hasApproval`.
+- `hasInconsistency`.
+- `requiresAttention`.
+- `attentionReasons`.
+
+`requiresAttention` debe ser un boolean deterministico y auditable derivado unicamente de condiciones explicitas.
+
+`requiresAttention = true` solo cuando:
+
+- `timelineDataQuality = "partial"`.
+- `timelineDataQuality = "inconsistent"`.
+- `executionStatus = "failed"`.
+- `executionStatus = "needs_human"`.
+- `executionStatus = "awaiting_approval"`.
+
+`requiresAttention = false` en cualquier otro caso.
+
+No se agrega scoring, severidad ni heuristicas. No se usa evaluacion causal ni metricas V0.14/V0.15 para decidir `requiresAttention`.
+
+Filtros permitidos:
+
+- `executionStatus`.
+- `projectId`.
+- `dataQuality`.
+- `requiresAttention`.
+- `limit`.
+
+Los filtros se aplican despues de construir summaries validos.
+
+`limit` se aplica al final, despues de construir summaries, aplicar filtros y ordenar.
+
+Ordenamiento:
+
+1. `updatedAt` descendente.
+2. `createdAt` descendente.
+3. `executionId` ascendente.
+
+Data quality del indice:
+
+- `complete`: todas las summaries incluidas tienen timeline `complete`.
+- `partial`: una o mas summaries tienen timeline `partial` y ninguna tiene `inconsistent`.
+- `inconsistent`: una o mas summaries tienen timeline `inconsistent`.
+
+La implementacion futura debe reutilizar V0.16 Execution Audit Timeline como fuente de composicion por ejecucion. `getExecutionAuditSummary(executionId)` reutiliza V0.16 y no reimplementa timeline. Si timeline V0.16 devuelve `found` pero `partial` o `inconsistent`, el summary sigue siendo `found` y preserva `timelineDataQuality`. No debe reimplementar sanitizacion, ordenamiento, dataQuality ni deteccion de inconsistencias.
+
+Limites:
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No ejecutar provider calls.
+- No hacer writes.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No agregar fallback.
+- No agregar retries.
+- No modificar ProviderAdapter.
+- No duplicar metricas V0.14/V0.15.
+- No reimplementar timeline V0.16.
+- No agregar scoring, severidad ni heuristicas para `requiresAttention`.
+- No usar evaluacion causal ni metricas V0.14/V0.15 para decidir `requiresAttention`.
+
+Criterios de aceptacion:
+
+- La API lista summaries de ejecuciones persistidas.
+- La API consulta summary por `executionId`.
+- `getExecutionAuditSummary` devuelve `found` si existe Execution y `not_found` solo si no existe.
+- Cada summary deriva su evidencia de V0.16 Execution Audit Timeline.
+- `sourcesPresent`, `timelineItemCount` y `timelineDataQuality` reflejan la timeline V0.16.
+- `requiresAttention` y `attentionReasons` son deterministas y auditables.
+- `requiresAttention` solo depende de `timelineDataQuality` y `executionStatus` segun condiciones explicitas.
+- El listado permite filtros simples read-only.
+- Los filtros se aplican despues de construir summaries validos.
+- `limit` se aplica al final, despues de filtros y orden.
+- El orden del listado es deterministico.
+- `dataQuality` del indice propaga `complete`, `partial` o `inconsistent`.
+- Lecturas repetidas no modifican State/Memory.
+- Router COST-FIRST y `advisorAuthority` permanecen intactos.
+
+## Decision 040: V0.17 Cierra Execution Audit Index Read API Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.17 queda cerrada despues de implementar y validar por dry-run la Read API minima de Execution Audit Index.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede descubrir ejecuciones persistidas y devolver summaries auditables derivados de V0.16 Execution Audit Timeline, sin reimplementar timeline, sin escribir estado, sin provider calls y sin alterar Router COST-FIRST ni `advisorAuthority`.
+
+Evidencia validada:
+
+- `getExecutionAuditSummary(executionId)` devuelve `found` si existe Execution persistida.
+- `getExecutionAuditSummary(executionId)` devuelve `not_found` solo si no existe Execution.
+- `timelineDataQuality` se preserva desde V0.16.
+- `listExecutionAuditSummaries(options?)` descubre executions persistidas via StateMemory.
+- Summaries se construyen antes de aplicar filtros.
+- `requiresAttention` solo se activa por `partial`, `inconsistent`, `failed`, `needs_human` o `awaiting_approval`.
+- No hay scoring, severidad ni heuristicas.
+- Filtros validados: `executionStatus`, `projectId`, `dataQuality`, `requiresAttention` y combinaciones.
+- `limit` se aplica al final, despues de construir summaries, filtrar y ordenar.
+- Orden deterministico: `updatedAt` descendente, `createdAt` descendente, `executionId` ascendente.
+- State/Memory sin cambios durante lectura.
+- `listExecutions()` es read-only.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- V0.17 reutiliza V0.16 Execution Audit Timeline y no reimplementa timeline.
+- Tests: 171/171 pass.
+
+Consecuencia:
+
+Execution Audit Index queda disponible mediante una superficie API minima read-only. Esta API no concede autoridad nueva, no recalcula routing, no escribe en persistencia, no llama providers, no duplica metricas V0.14/V0.15 y no introduce dashboard, fallback, retries ni nueva base de datos.
+
+Criterios de aceptacion:
+
+- El indice descubre ejecuciones persistidas via StateMemory.
+- Los summaries se derivan de V0.16 Execution Audit Timeline.
+- `found` significa Execution persistida; `not_found` significa ausencia de Execution.
+- `requiresAttention` permanece como booleano derivado solo de condiciones explicitas.
+- Los filtros se aplican despues de construir summaries validos.
+- `limit` se aplica al final.
+- Lecturas repetidas no modifican State/Memory.
+- Router COST-FIRST y `advisorAuthority` permanecen intactos.

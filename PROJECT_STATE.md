@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.16 closed.
+Fase: V0.17 closed.
 
-Version objetivo: V0.16.
+Version objetivo: V0.17.
 
-Codigo implementado: si para V0.16.
+Codigo implementado: si para V0.17.
 
-Estado actual: V0.16 cerrada y congelada.
+Estado actual: V0.17 cerrada y congelada.
 
-Ultimo hito: cierre formal de V0.16 Execution Audit Timeline Read API.
+Ultimo hito: cierre formal de V0.17 Execution Audit Index Read API.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 164/164 pass.
+Tests actuales: 171/171 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -193,6 +193,48 @@ Fuentes V0.16: Execution persistida, execution events, Authority Decision Audit 
 Semantica V0.16: `found` aplica si existe la Execution persistida; `not_found` solo aplica si no existe. Cada timeline item debe provenir de evidencia realmente persistida. No se fabrican eventos derivados como registros independientes. Evaluation, approval o selection embebidos en Execution pueden representarse con `source = "execution"`. Sources especificos como `authority_audit`, `budget_ledger`, `event`, `approval` o `evaluation` solo se usan con registros persistidos independientes. Si una fuente no tiene timestamp confiable, no se inventa; se refleja en `dataQuality` y `reason`.
 
 Limites V0.16: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries.
+
+V0.16: cerrada y congelada.
+
+Commit de cierre V0.16: `96fa79fb8b94d64bd39d28eae4d56e3952c678a4`.
+
+V0.17: comienza como fase documental separada.
+
+Titulo V0.17: Execution Audit Index Read API.
+
+Objetivo V0.17: definir una Read API minima para listar ejecuciones persistidas con un resumen auditable de estado operacional, reutilizando V0.16 Execution Audit Timeline como fuente de composicion por ejecucion.
+
+Razon V0.17: V0.16 permite auditar una ejecucion concreta si ya se conoce su `executionId`; V0.17 agrega descubrimiento y priorizacion operacional de ejecuciones sin duplicar metricas ni ampliar autoridad.
+
+Superficie API V0.17: `listExecutionAuditSummaries(options?)` y `getExecutionAuditSummary(executionId)`.
+
+Semantica V0.17: cada summary deriva de la Execution persistida y de la timeline V0.16. `getExecutionAuditSummary` devuelve `found` si existe Execution y `not_found` solo si no existe. Si timeline V0.16 devuelve `found` pero `partial` o `inconsistent`, el summary sigue siendo `found` y preserva `timelineDataQuality`. El indice propaga `dataQuality` complete/partial/inconsistent desde las timelines y marca `requiresAttention` de forma deterministica unicamente desde condiciones explicitas: `timelineDataQuality = "partial"` o `"inconsistent"`, o `executionStatus = "failed"`, `"needs_human"` o `"awaiting_approval"`. En cualquier otro caso, `requiresAttention = false`.
+
+Limites V0.17: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no hacer writes, no agregar dashboard, no introducir nueva base de datos, no agregar fallback ni retries, no modificar ProviderAdapter, no duplicar metricas V0.14/V0.15, no reimplementar la timeline V0.16, no agregar scoring/severidad/heuristicas para `requiresAttention` y no usar evaluacion causal ni metricas V0.14/V0.15 para decidir atencion.
+
+## Cierre V0.17
+
+V0.17 queda lista para cierre despues de implementar y validar por dry-run Execution Audit Index Read API.
+
+La validacion confirmo:
+
+- `getExecutionAuditSummary(executionId)` devuelve `found` si existe Execution persistida.
+- `getExecutionAuditSummary(executionId)` devuelve `not_found` solo si no existe Execution.
+- `timelineDataQuality` se preserva desde V0.16.
+- `listExecutionAuditSummaries(options?)` descubre executions persistidas via StateMemory.
+- Summaries se construyen antes de aplicar filtros.
+- `requiresAttention` solo se activa por `partial`, `inconsistent`, `failed`, `needs_human` o `awaiting_approval`.
+- No hay scoring, severidad ni heuristicas.
+- Filtros validados: `executionStatus`, `projectId`, `dataQuality`, `requiresAttention` y combinaciones.
+- `limit` se aplica al final, despues de construir summaries, filtrar y ordenar.
+- Orden deterministico: `updatedAt` descendente, `createdAt` descendente, `executionId` ascendente.
+- State/Memory sin cambios durante lectura.
+- `listExecutions()` es read-only.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- V0.17 reutiliza V0.16 Execution Audit Timeline y no reimplementa timeline.
+- Tests: 171/171 pass.
 
 ## Cierre V0.16
 
@@ -665,6 +707,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.15 queda validada con dry-run verificable de Authority Runtime Safety Metrics Read API, full report `found`, query por `executionId` `found` con evidencia parcial, `not_found` solo sin evidencia de autoridad, preservacion de `partial`, `insufficient_data`, `actualOutcome`, `counterfactualOutcome = "unavailable"`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 158/158 tests.
 - V0.16 declara contrato de Execution Audit Timeline Read API, consulta cronologica por `executionId`, `found` si existe Execution, `not_found` solo si no existe, items respaldados por evidencia persistida, sources especificos solo con registros independientes, `dataQuality` complete/partial/inconsistent, timestamps no inventados, proteccion de secretos y limites sin writes ni autoridad nueva antes de tocar codigo.
 - V0.16 queda validada con dry-run verificable de Execution Audit Timeline Read API, `found`/`not_found`, timeline solo desde evidencia persistida, sources independientes solo con registros independientes, evaluation embebida con `source = "execution"`, orden deterministico timestamp/source/type, `dataQuality` complete/partial/inconsistent, timestamps faltantes no inventados, secretos sanitizados, bug `finalResultLength` corregido, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 164/164 tests.
+- V0.17 declara contrato de Execution Audit Index Read API, listado y consulta de summaries auditables por ejecucion, reutilizacion de V0.16 timeline, `requiresAttention` booleano sin scoring, filtros read-only, orden deterministico y limites sin writes ni autoridad nueva antes de tocar codigo.
+- V0.17 queda validada con dry-run verificable de Execution Audit Index Read API, summary `found`/`not_found`, `timelineDataQuality` preservado, descubrimiento via StateMemory, summaries antes de filtros, `requiresAttention` solo por condiciones explicitas, `limit` al final, orden deterministico, `listExecutions()` read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 171/171 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

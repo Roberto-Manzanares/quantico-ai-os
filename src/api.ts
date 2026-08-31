@@ -6,6 +6,9 @@ import type {
   AuthorityRuntimeSafetyMetricsReadResult,
   AuthorityRuntimeOutcomeComparison,
   Execution,
+  ExecutionAuditSummaryListResult,
+  ExecutionAuditSummaryOptions,
+  ExecutionAuditSummaryReadResult,
   ExecutionAuditTimelineReadResult,
   ExecutionRequest,
   ExecutionResultMetrics,
@@ -30,6 +33,10 @@ export interface QuanticoApi {
     executionId: string
   ): Promise<AuthorityRuntimeSafetyMetricsExecutionReadResult>;
   getExecutionAuditTimeline(executionId: string): Promise<ExecutionAuditTimelineReadResult>;
+  listExecutionAuditSummaries(
+    options?: ExecutionAuditSummaryOptions
+  ): Promise<ExecutionAuditSummaryListResult>;
+  getExecutionAuditSummary(executionId: string): Promise<ExecutionAuditSummaryReadResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -132,6 +139,14 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
     },
     async getExecutionAuditTimeline(executionId: string): Promise<ExecutionAuditTimelineReadResult> {
       return system.executionAuditTimeline.getExecutionAuditTimeline(executionId);
+    },
+    async listExecutionAuditSummaries(
+      options?: ExecutionAuditSummaryOptions
+    ): Promise<ExecutionAuditSummaryListResult> {
+      return system.executionAuditIndex.listExecutionAuditSummaries(options);
+    },
+    async getExecutionAuditSummary(executionId: string): Promise<ExecutionAuditSummaryReadResult> {
+      return system.executionAuditIndex.getExecutionAuditSummary(executionId);
     }
   };
 }

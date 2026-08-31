@@ -12,6 +12,7 @@ import type {
 export interface StateMemory {
   saveExecution(execution: Execution): Promise<void>;
   getExecution(id: string): Promise<Execution | undefined>;
+  listExecutions(): Promise<Execution[]>;
   appendEvent(event: ExecutionEvent): Promise<void>;
   listEvents(executionId: string): Promise<ExecutionEvent[]>;
   savePendingApprovalStep(step: PendingApprovalStep): Promise<void>;
@@ -39,6 +40,10 @@ export class InMemoryStateMemory implements StateMemory {
 
   async getExecution(id: string): Promise<Execution | undefined> {
     return this.executions.get(id);
+  }
+
+  async listExecutions(): Promise<Execution[]> {
+    return [...this.executions.values()];
   }
 
   async appendEvent(event: ExecutionEvent): Promise<void> {
@@ -142,6 +147,11 @@ export class FileStateMemory implements StateMemory {
   async getExecution(id: string): Promise<Execution | undefined> {
     const state = await this.readState();
     return state.executions.find((execution) => execution.id === id);
+  }
+
+  async listExecutions(): Promise<Execution[]> {
+    const state = await this.readState();
+    return state.executions;
   }
 
   async appendEvent(event: ExecutionEvent): Promise<void> {

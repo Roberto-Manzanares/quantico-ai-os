@@ -635,6 +635,54 @@ export type ExecutionAuditTimelineReadResult =
       reason: string;
     };
 
+export interface ExecutionAuditSummaryOptions {
+  executionStatus?: ExecutionStatus;
+  projectId?: string;
+  dataQuality?: ExecutionAuditTimelineDataQuality;
+  requiresAttention?: boolean;
+  limit?: number;
+}
+
+export interface ExecutionAuditSummary {
+  executionId: string;
+  projectId?: string;
+  executionStatus: ExecutionStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  timelineDataQuality: ExecutionAuditTimelineDataQuality;
+  timelineItemCount: number;
+  sourcesPresent: ExecutionAuditTimelineSource[];
+  hasAuthorityAudit: boolean;
+  hasBudgetLedger: boolean;
+  hasEvaluation: boolean;
+  hasApproval: boolean;
+  hasInconsistency: boolean;
+  requiresAttention: boolean;
+  attentionReasons: string[];
+}
+
+export interface ExecutionAuditSummaryListResult {
+  status: "found";
+  summaries: ExecutionAuditSummary[];
+  totalExecutions: number;
+  filtersApplied: ExecutionAuditSummaryOptions;
+  dataQuality: ExecutionAuditTimelineDataQuality;
+  reason: string;
+}
+
+export type ExecutionAuditSummaryReadResult =
+  | {
+      status: "found";
+      executionId: string;
+      summary: ExecutionAuditSummary;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      executionId: string;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
