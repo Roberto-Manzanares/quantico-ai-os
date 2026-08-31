@@ -753,3 +753,98 @@ Criterios de aceptacion:
 - `advisorAuthority` permanece siempre `none`.
 - No se modifica Router COST-FIRST ni ProviderAdapter.
 - No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.
+
+## Decision 023: V0.9 Abre Shadow Routing Evaluation Log
+
+Estado: aceptada.
+
+Decision:
+
+V0.9 se abre como fase separada para persistir y consultar un historial auditable de comparaciones entre la seleccion real del Router COST-FIRST y la recomendacion del Shadow Routing Advisor.
+
+Razon:
+
+V0.8 puede comparar COST-FIRST contra una recomendacion historica, pero todavia no conserva evidencia acumulada de esas coincidencias y divergencias. Antes de otorgar cualquier autoridad futura al advisor, Quantico AI OS debe medir y auditar esas divergencias en el tiempo.
+
+Consecuencia:
+
+Cada evaluacion shadow debe poder persistir:
+
+- `actualSelection`.
+- `shadowRecommendation`.
+- `matchesActualSelection`.
+- `differenceReason`.
+- Metricas usadas por el advisor.
+- `advisorAuthority` siempre `none`.
+
+El sistema debe proveer lectura auditable del historial y agregados simples:
+
+- `totalEvaluations`.
+- `matchCount`.
+- `divergenceCount`.
+- `insufficientDataCount`.
+- `matchRate`.
+- `divergenceRate`.
+
+La persistencia debe usar State/Memory existente y archivo local estructurado. No se introduce nueva base de datos.
+
+Quedan fuera cambios al Router COST-FIRST, provider calls adicionales, fallback, retries, dashboard, autoridad de seleccion, ranking opaco, aprendizaje automatico, optimizacion historica automatica y nuevos providers.
+
+Criterios de aceptacion:
+
+- El log persiste seleccion real, recomendacion shadow, match/divergence, razones y metricas usadas.
+- `advisorAuthority` queda persistido como `none`.
+- El historial puede listarse de forma auditable.
+- Los agregados de match/divergence son deterministas.
+- Datos insuficientes se registran explicitamente sin inventar recomendacion.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+- No se ejecutan llamadas adicionales a providers.
+
+## Decision 024: V0.9 Cierra Shadow Routing Evaluation Log Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.9 queda cerrada despues de implementar y validar por dry-run el Shadow Routing Evaluation Log persistible.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede conservar historial auditable de coincidencias, divergencias e insuficiencia de datos entre Router COST-FIRST y Shadow Routing Advisor sin otorgar autoridad operativa al advisor.
+
+Evidencia:
+
+- 1 match persistido.
+- 1 divergence persistido.
+- 1 `insufficient_data` persistido.
+- `listEntries()` devuelve 3 entradas.
+- Filtro por `executionId` correcto.
+- Persistencia sobrevive reinicio de `FileStateMemory`.
+- `differenceReason` y metricas auditables persistidas.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls adicionales: 0.
+- Tests: 114/114 pass.
+
+Agregados validados:
+
+- `totalEvaluations`: 3.
+- `matchCount`: 1.
+- `divergenceCount`: 1.
+- `insufficientDataCount`: 1.
+- `matchRate`: 0.333333.
+- `divergenceRate`: 0.333333.
+
+Consecuencia:
+
+Shadow Routing Evaluation Log queda disponible como registro historico auditable. No decide routing, no modifica COST-FIRST, no ejecuta providers, no hace fallback, no hace retries y no introduce dashboard.
+
+Criterios de aceptacion:
+
+- El log persiste match, divergence e insufficient data.
+- El historial puede listarse completo y filtrarse por `executionId`.
+- Los agregados de match/divergence son deterministas.
+- La persistencia sobrevive reinicio de `FileStateMemory`.
+- `advisorAuthority` permanece siempre `none`.
+- No se modifica Router COST-FIRST ni ProviderAdapter.
+- No se agregan llamadas reales, fallback, retries, dashboard, ranking opaco ni aprendizaje automatico.

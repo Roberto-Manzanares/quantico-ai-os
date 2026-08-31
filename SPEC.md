@@ -1081,3 +1081,119 @@ Si la recomendacion historica difiere de la seleccion real, V0.8 solo registra o
 - Datos insuficientes devuelven `insufficient_data` sin inventar ranking.
 - Una divergencia no modifica Router COST-FIRST ni la ejecucion real.
 - No se agregan fallback, retries, dashboard, aprendizaje automatico, ranking opaco ni nuevos providers.
+
+## Apertura V0.9
+
+Titulo: V0.9 - Shadow Routing Evaluation Log.
+
+Estado de V0.8: cerrada y congelada.
+
+Commit de cierre V0.8: `37328a6b8d94980748f78809229705d31723cef8`.
+
+V0.9 comienza como fase separada.
+
+### Objetivo V0.9
+
+Persistir y consultar un historial auditable de comparaciones entre la seleccion real del Router COST-FIRST y la recomendacion del Shadow Routing Advisor, sin otorgar autoridad de seleccion al advisor.
+
+### Alcance V0.9
+
+Incluido:
+
+- Persistir `actualSelection`.
+- Persistir `shadowRecommendation`.
+- Persistir `matchesActualSelection`.
+- Persistir `differenceReason`, cuando exista divergencia.
+- Persistir metricas usadas por el advisor.
+- Persistir `advisorAuthority` siempre como `none`.
+- Agregados simples de match/divergence.
+- Lectura auditable del historial.
+- Uso de la persistencia existente en State/Memory.
+
+Fuera de alcance:
+
+- Cambios al Router COST-FIRST.
+- Provider calls adicionales.
+- Fallback.
+- Retries.
+- Dashboard.
+- Autoridad de seleccion para el advisor.
+- Base de datos nueva.
+- Ranking opaco.
+- Aprendizaje automatico.
+- Optimizacion historica automatica.
+- Nuevos providers.
+
+### Contrato Del Shadow Routing Evaluation Log
+
+Cada entrada persistida debe incluir:
+
+- `id`.
+- `executionId`.
+- `timestamp`.
+- `actualSelection`:
+  - `provider`.
+  - `model`.
+  - `estimatedCostUsd`.
+  - `reason`.
+- `shadowRecommendation`, cuando exista:
+  - `provider`.
+  - `model`.
+  - `reason`.
+  - metricas usadas.
+- `matchesActualSelection`.
+- `differenceReason`, cuando `matchesActualSelection` sea `false`.
+- `dataQuality`.
+- `advisorAuthority`: siempre `none`.
+
+Lectura minima:
+
+- Listar entradas historicas.
+- Filtrar por `executionId`, cuando aplique.
+- Devolver agregados simples:
+  - `totalEvaluations`.
+  - `matchCount`.
+  - `divergenceCount`.
+  - `insufficientDataCount`.
+  - `matchRate`.
+  - `divergenceRate`.
+
+### Semantica V0.9
+
+El log registra evidencia operacional de shadow routing. No decide, no modifica ejecuciones, no llama providers y no altera el Router COST-FIRST.
+
+`actualSelection` representa la seleccion real ya producida por Router COST-FIRST.
+
+`shadowRecommendation` representa la recomendacion observacional del Shadow Routing Advisor. Si no existe por datos insuficientes, debe persistirse `null` o equivalente explicito con `dataQuality` `insufficient_data`.
+
+`matchesActualSelection` indica si ambas selecciones coinciden en `provider` y `model`.
+
+Los agregados de match/divergence son descriptivos y no deben convertirse en reglas de routing automaticas en V0.9.
+
+### Estrategia De Persistencia V0.9
+
+V0.9 debe reutilizar State/Memory y el archivo local estructurado existente. No se introduce base de datos, servicio externo ni dependencia nueva para persistencia.
+
+Las entradas deben ser auditables y no deben persistir prompts, API keys, workspace IDs ni secretos.
+
+### Casos Limite V0.9
+
+- Si el advisor devuelve `insufficient_data`, la entrada se persiste con `shadowRecommendation` ausente o `null` y `advisorAuthority` `none`.
+- Si falta `differenceReason` en una divergencia, debe generarse o registrarse una razon auditable.
+- Si no hay entradas historicas, el listado devuelve coleccion vacia y los agregados devuelven conteos cero.
+- Si solo hay matches, `divergenceCount` es cero.
+- Si solo hay divergencias, `matchCount` es cero.
+- Si State/Memory no puede escribirse o leerse, la operacion debe fallar limpiamente sin inventar historial.
+- El log no debe activar llamadas a OpenAI, Anthropic ni otros providers.
+- El log no debe cambiar Router COST-FIRST, Budget Enforcement ni ProviderAdapter.
+
+### Criterios De Aceptacion V0.9
+
+- Cada comparacion shadow puede persistirse con seleccion real, recomendacion shadow, match/divergence, razon, metricas usadas y `advisorAuthority`.
+- `advisorAuthority` se persiste siempre como `none`.
+- El historial puede leerse de forma auditable.
+- Los agregados simples calculan matches, divergences, insufficient data y tasas correspondientes.
+- La ausencia de datos no produce recomendaciones inventadas.
+- No se agregan provider calls adicionales.
+- No se modifica Router COST-FIRST.
+- No se agregan fallback, retries, dashboard, ranking opaco, aprendizaje automatico ni nuevos providers.

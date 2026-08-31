@@ -365,6 +365,28 @@ export interface ShadowRoutingAdvice {
   reason: string;
 }
 
+export interface ShadowRoutingEvaluationLogEntry {
+  id: string;
+  executionId: string;
+  timestamp: Date;
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  matchesActualSelection: boolean;
+  differenceReason?: string;
+  metricsUsed: ShadowAdvisorMetricsUsed | null;
+  dataQuality: ShadowAdvisorDataQuality;
+  advisorAuthority: "none";
+}
+
+export interface ShadowRoutingEvaluationLogSummary {
+  totalEvaluations: number;
+  matchCount: number;
+  divergenceCount: number;
+  insufficientDataCount: number;
+  matchRate: number;
+  divergenceRate: number;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

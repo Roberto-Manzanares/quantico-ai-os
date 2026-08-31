@@ -1,6 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { BudgetLedgerEntry, Execution, ExecutionEvent, PendingApprovalStep } from "../types.js";
+import type {
+  BudgetLedgerEntry,
+  Execution,
+  ExecutionEvent,
+  PendingApprovalStep,
+  ShadowRoutingEvaluationLogEntry
+} from "../types.js";
 
 export interface StateMemory {
   saveExecution(execution: Execution): Promise<void>;
@@ -12,6 +18,8 @@ export interface StateMemory {
   clearPendingApprovalStep(executionId: string): Promise<void>;
   saveBudgetLedgerEntry(entry: BudgetLedgerEntry): Promise<void>;
   listBudgetLedgerEntries(executionId?: string): Promise<BudgetLedgerEntry[]>;
+  saveShadowRoutingEvaluation(entry: ShadowRoutingEvaluationLogEntry): Promise<void>;
+  listShadowRoutingEvaluations(executionId?: string): Promise<ShadowRoutingEvaluationLogEntry[]>;
 }
 
 export class InMemoryStateMemory implements StateMemory {
@@ -19,6 +27,7 @@ export class InMemoryStateMemory implements StateMemory {
   private readonly events: ExecutionEvent[] = [];
   private readonly pendingApprovalSteps = new Map<string, PendingApprovalStep>();
   private readonly budgetLedgerEntries: BudgetLedgerEntry[] = [];
+  private readonly shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[] = [];
 
   async saveExecution(execution: Execution): Promise<void> {
     this.executions.set(execution.id, execution);
@@ -65,6 +74,26 @@ export class InMemoryStateMemory implements StateMemory {
 
     return this.budgetLedgerEntries.filter((entry) => entry.executionId === executionId);
   }
+
+  async saveShadowRoutingEvaluation(entry: ShadowRoutingEvaluationLogEntry): Promise<void> {
+    const existingIndex = this.shadowRoutingEvaluations.findIndex((item) => item.id === entry.id);
+
+    if (existingIndex >= 0) {
+      this.shadowRoutingEvaluations[existingIndex] = entry;
+    } else {
+      this.shadowRoutingEvaluations.push(entry);
+    }
+  }
+
+  async listShadowRoutingEvaluations(
+    executionId?: string
+  ): Promise<ShadowRoutingEvaluationLogEntry[]> {
+    if (!executionId) {
+      return [...this.shadowRoutingEvaluations];
+    }
+
+    return this.shadowRoutingEvaluations.filter((entry) => entry.executionId === executionId);
+  }
 }
 
 interface StateFileData {
@@ -72,6 +101,7 @@ interface StateFileData {
   events: ExecutionEvent[];
   pendingApprovalSteps: PendingApprovalStep[];
   budgetLedgerEntries: BudgetLedgerEntry[];
+  shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[];
 }
 
 export class FileStateMemory implements StateMemory {
@@ -157,13 +187,44 @@ export class FileStateMemory implements StateMemory {
     return state.budgetLedgerEntries.filter((entry) => entry.executionId === executionId);
   }
 
+  async saveShadowRoutingEvaluation(entry: ShadowRoutingEvaluationLogEntry): Promise<void> {
+    const state = await this.readState();
+    const existingIndex = state.shadowRoutingEvaluations.findIndex((item) => item.id === entry.id);
+
+    if (existingIndex >= 0) {
+      state.shadowRoutingEvaluations[existingIndex] = entry;
+    } else {
+      state.shadowRoutingEvaluations.push(entry);
+    }
+
+    await this.writeState(state);
+  }
+
+  async listShadowRoutingEvaluations(
+    executionId?: string
+  ): Promise<ShadowRoutingEvaluationLogEntry[]> {
+    const state = await this.readState();
+
+    if (!executionId) {
+      return state.shadowRoutingEvaluations;
+    }
+
+    return state.shadowRoutingEvaluations.filter((entry) => entry.executionId === executionId);
+  }
+
   private async readState(): Promise<StateFileData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
       return normalizeState(JSON.parse(raw, reviveDates) as Partial<StateFileData>);
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return { executions: [], events: [], pendingApprovalSteps: [], budgetLedgerEntries: [] };
+        return {
+          executions: [],
+          events: [],
+          pendingApprovalSteps: [],
+          budgetLedgerEntries: [],
+          shadowRoutingEvaluations: []
+        };
       }
 
       throw error;
@@ -189,7 +250,8 @@ function normalizeState(state: Partial<StateFileData>): StateFileData {
     executions: state.executions ?? [],
     events: state.events ?? [],
     pendingApprovalSteps: state.pendingApprovalSteps ?? [],
-    budgetLedgerEntries: state.budgetLedgerEntries ?? []
+    budgetLedgerEntries: state.budgetLedgerEntries ?? [],
+    shadowRoutingEvaluations: state.shadowRoutingEvaluations ?? []
   };
 }
 

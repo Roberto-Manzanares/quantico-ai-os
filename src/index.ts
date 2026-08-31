@@ -9,6 +9,7 @@ export * from "./components/human-approval-gate.js";
 export * from "./components/model-router.js";
 export * from "./components/provider-scorecard.js";
 export * from "./components/shadow-routing-advisor.js";
+export * from "./components/shadow-routing-evaluation-log.js";
 export * from "./components/state-memory.js";
 export * from "./components/token-governor.js";
 export * from "./config/model-config.js";

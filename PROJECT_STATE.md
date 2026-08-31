@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.8 ready to close.
+Fase: V0.9 ready to close.
 
-Version objetivo: V0.8.
+Version objetivo: V0.9.
 
 Codigo implementado: si.
 
-Estado actual: V0.8 implementada y validada por dry-run.
+Estado actual: V0.9 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Shadow Routing Advisor.
+Ultimo hito: dry-run final de Shadow Routing Evaluation Log.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 106/106 pass.
+Tests actuales: 114/114 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -93,6 +93,14 @@ V0.8: implementada y validada por dry-run.
 Titulo V0.8: Shadow Routing Advisor.
 
 Objetivo V0.8: comparar la decision real del Router COST-FIRST contra una recomendacion historica derivada solo del Provider Scorecard, sin autoridad de routing.
+
+Commit de cierre V0.8: `37328a6b8d94980748f78809229705d31723cef8`.
+
+V0.9: implementada y validada por dry-run.
+
+Titulo V0.9: Shadow Routing Evaluation Log.
+
+Objetivo V0.9: persistir y consultar un historial auditable de comparaciones entre seleccion COST-FIRST real y recomendacion shadow, sin autoridad de seleccion.
 
 Defaults economicos V0.2:
 
@@ -312,9 +320,36 @@ La validacion confirmo:
 - Provider calls: 0.
 - Tests: 106/106 pass.
 
+## Cierre V0.9
+
+V0.9 queda lista para cierre despues de implementar y validar por dry-run el Shadow Routing Evaluation Log.
+
+La validacion confirmo:
+
+- 1 match persistido.
+- 1 divergence persistido.
+- 1 `insufficient_data` persistido.
+- `listEntries()` devuelve 3 entradas.
+- Filtro por `executionId` correcto.
+- Persistencia sobrevive reinicio de `FileStateMemory`.
+- `differenceReason` y metricas auditables persistidas.
+- `advisorAuthority` siempre `none`.
+- Router COST-FIRST intacto.
+- Provider calls adicionales: 0.
+- Tests: 114/114 pass.
+
+Agregados validados:
+
+- `totalEvaluations`: 3.
+- `matchCount`: 1.
+- `divergenceCount`: 1.
+- `insufficientDataCount`: 1.
+- `matchRate`: 0.333333.
+- `divergenceRate`: 0.333333.
+
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.9 documentalmente antes de tocar codigo.
+- Definir V0.10 documentalmente antes de tocar codigo.
 - Mantener Router COST-FIRST sin cambios.
 - No agregar ranking automatico, fallback ni retries.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
@@ -364,6 +399,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.7 queda validada con dry-run verificable de Provider Scorecard Read API, consulta `found`, consulta `not_found`, lectura read-only y 96/96 tests.
 - V0.8 declara contrato de Shadow Routing Advisor, comparacion contra Router COST-FIRST, reglas deterministicas, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.8 queda validada con dry-run verificable de Shadow Routing Advisor, match/divergence, precedencia deterministica, `advisorAuthority` `none`, cero provider calls y 106/106 tests.
+- V0.9 declara contrato de Shadow Routing Evaluation Log, persistencia, lectura historica, agregados match/divergence, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.9 queda validada con dry-run verificable de Shadow Routing Evaluation Log, match/divergence/insufficient_data, lectura historica, filtro por executionId, persistencia tras reinicio, agregados y 114/114 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.
