@@ -1110,3 +1110,100 @@ Evidencia validada:
 Consecuencia:
 
 Quantico AI OS conserva trazabilidad historica de evaluaciones de autoridad sin otorgar autoridad operativa adicional. La politica puede seguir analizandose antes de cualquier integracion futura al flujo real.
+
+## Decision 031: V0.13 Abre Authority Runtime Integration
+
+Estado: aceptada.
+
+Decision:
+
+V0.13 se abre como fase documental para integrar la Limited Shadow Authority Policy al runtime real del Kernel.
+
+Razon:
+
+V0.11 definio una politica de autoridad limitada y V0.12 agrego auditoria persistente de decisiones. El siguiente paso debe definir exactamente donde entra esa autoridad en el flujo real para evitar llamadas duplicadas, saltos de presupuesto, auditoria incompleta o sustituciones no verificables.
+
+Flujo aprobado:
+
+Context Compiler -> Router COST-FIRST -> Authority Policy -> `effectiveSelection` -> Token Governor -> Budget Enforcement -> Human Approval Gate -> Provider -> Evaluator -> Ledger / Audit.
+
+Reglas:
+
+- `effectiveSelection` se materializa exactamente una vez por execution attempt y queda inmutable durante ese intento.
+- Authority Policy puede mantener COST-FIRST o sustituir por shadow permitido.
+- Si Authority Policy falla o queda ambigua, se registra `authority_failed_closed`, se usa COST-FIRST como `effectiveSelection` y se continua hacia Token Governor/Budget Enforcement.
+- Si falla la persistencia de la decision de autoridad, se registra `authority_audit_failed`, la ejecucion se detiene antes de provider y no continua ni siquiera con COST-FIRST.
+- Token Governor y Budget Enforcement validan siempre y exclusivamente la `effectiveSelection` final.
+- No se puede ejecutar provider antes de cerrar autoridad y presupuesto.
+- Una execution attempt puede realizar maximo una provider call.
+- No hay retries ni fallback automatico.
+- Toda decision de autoridad se persiste en Authority Decision Audit Log.
+- No se duplican ledger entries ni audit entries.
+- Rollback a COST-FIRST ocurre antes de provider call.
+- Si Token Governor o Budget Enforcement rechazan, no se recalcula seleccion ni se vuelve a invocar Authority Policy.
+- Human Approval Gate conserva su autoridad actual.
+- Human Approval Gate no provoca rerouting ni nueva evaluacion de autoridad al reanudarse; conserva la misma `effectiveSelection` del intento pendiente.
+
+Invariantes:
+
+- Router COST-FIRST sigue siendo la seleccion base y fallback seguro.
+- Authority Policy no llama providers.
+- Provider Adapter recibe solo la seleccion efectiva normalizada.
+- Si falla la auditoria de autoridad, no se llama provider.
+- Si Token Governor o Budget Enforcement rechazan, no se llama provider.
+- Si Human Approval Gate pausa, no se llama provider antes de aprobacion.
+- Reanudaciones desde Human Approval Gate usan la `effectiveSelection` ya materializada para el intento pendiente.
+
+Estados de fallo definidos:
+
+- `authority_failed_closed`: Authority Policy falla o queda ambigua; se usa COST-FIRST como `effectiveSelection` y la ejecucion continua hacia Token Governor/Budget Enforcement.
+- `authority_audit_failed`: fallo al persistir la decision de autoridad; la ejecucion se detiene antes de provider, no continua con COST-FIRST y provider calls = 0.
+- `effective_selection_missing`.
+- `budget_rejected`.
+- `needs_human`.
+- `provider_error`.
+
+Consecuencia:
+
+V0.13 no implementa codigo todavia. La fase fija el contrato operativo para conectar autoridad limitada al Kernel sin romper COST-FIRST, presupuesto, aprobacion humana, ledger ni auditoria.
+
+## Decision 032: V0.13 Cierra Authority Runtime Integration Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.13 queda cerrada despues de implementar y validar por dry-run la integracion de Authority Runtime en el flujo real del Kernel.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede materializar una unica `effectiveSelection` por execution attempt, auditar la decision de autoridad, validar presupuesto exclusivamente sobre esa seleccion efectiva y ejecutar como maximo una llamada a provider sin romper Router COST-FIRST.
+
+Evidencia validada:
+
+- Shadow allowed usa shadow como `effectiveSelection` en Token Governor, Budget Enforcement, Provider y Budget Ledger.
+- `authority_failed_closed` usa COST-FIRST como `effectiveSelection` y continua normalmente hacia Token Governor/Budget Enforcement.
+- `authority_audit_failed` detiene la ejecucion antes de provider.
+- Token Governor reject no reroutea ni vuelve a invocar Authority Policy.
+- Budget Enforcement reject no reroutea ni vuelve a invocar Authority Policy.
+- `needs_human` + approve conserva exactamente la misma `effectiveSelection`.
+- Maximo una provider call por execution attempt.
+- Una sola Authority Decision Audit entry por intento.
+- Budget Ledger sin entradas duplicadas.
+- Router COST-FIRST intacto.
+- Provider calls reales: 0.
+- Tests: 148/148 pass.
+
+Consecuencia:
+
+La autoridad limitada queda integrada al runtime con comportamiento fail-closed, auditoria obligatoria y COST-FIRST como fallback seguro. No se agregan retries, fallback automatico, dashboard, provider calls adicionales, scorecards nuevos ni cambios al contrato `ProviderAdapter`.
+
+Criterios de aceptacion:
+
+- La seleccion efectiva se calcula una sola vez por intento y permanece inmutable.
+- Authority Decision Audit Log persiste exactamente una entrada por intento antes de cualquier llamada a provider.
+- Si falla la auditoria de autoridad, no se llama provider.
+- Si Token Governor o Budget Enforcement rechazan, no se recalcula seleccion.
+- Human Approval conserva la seleccion efectiva al pausar y aprobar.
+- Budget Ledger no duplica entradas por intento.
+- Router COST-FIRST permanece intacto como seleccion base y fallback seguro.

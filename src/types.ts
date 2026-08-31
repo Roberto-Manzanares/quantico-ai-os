@@ -39,6 +39,7 @@ export interface ExecutionConstraints {
   preferredModel?: string;
   blockedProviders?: ProviderName[];
   blockedModels?: string[];
+  authorityPolicy?: LimitedShadowAuthorityPolicyConfig;
   maxCostUsd?: number;
   maxExecutionCostUsd?: number;
   maxProjectCostUsd?: number;

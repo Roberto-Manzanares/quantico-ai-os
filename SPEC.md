@@ -1686,3 +1686,130 @@ No debe persistir prompts, API keys, workspace IDs ni secretos.
 - El log no conecta la politica al runtime real.
 - Router COST-FIRST permanece intacto.
 - No se agregan provider calls, fallback, retries, dashboard, aprendizaje automatico, autoridad global ni nueva base de datos.
+
+## Apertura V0.13
+
+Titulo: V0.13 - Authority Runtime Integration.
+
+Estado de V0.12: cerrada y congelada.
+
+Commit de cierre V0.12: `fe40524eb19111f62a6c972a6fbaed92e9e1d62c`.
+
+V0.13 comienza como fase documental separada.
+
+### Objetivo V0.13
+
+Integrar la Limited Shadow Authority Policy al flujo real del Kernel de forma controlada, auditable y fail-closed, determinando una unica `effectiveSelection` antes de presupuesto, aprobacion humana y llamada al provider.
+
+### Flujo Canonico V0.13
+
+El flujo exacto debe ser:
+
+1. Context Compiler.
+2. Router COST-FIRST.
+3. Authority Policy.
+4. `effectiveSelection`.
+5. Token Governor.
+6. Budget Enforcement.
+7. Human Approval Gate.
+8. Provider.
+9. Evaluator.
+10. Ledger / Audit.
+
+### Contrato De Integracion Runtime
+
+Entrada minima:
+
+- `goal`.
+- `task_type`.
+- Contexto compilado.
+- Seleccion COST-FIRST.
+- Recomendacion shadow disponible.
+- Reporte de evidencia V0.10.
+- Politica V0.11.
+- Presupuesto de tokens/costo.
+- Restricciones de provider/model.
+- Estado/memoria vigente.
+
+Salida minima:
+
+- `actualSelection`: seleccion de Router COST-FIRST.
+- `authorityDecision`: decision de Authority Policy.
+- `effectiveSelection`: seleccion final usada para Token Governor, Budget Enforcement y Provider.
+- `authorityAuditEntry`.
+- `executionAttemptId` o identificador equivalente del intento cuando aplique.
+- Estado final o estado de pausa/fallo.
+- Eventos auditables de transicion.
+
+### Reglas De Runtime
+
+- `effectiveSelection` se materializa exactamente una vez por execution attempt y queda inmutable durante ese intento.
+- Authority Policy puede mantener COST-FIRST o sustituir por shadow permitido.
+- Si Authority Policy falla, queda ambigua o no puede verificar sus condiciones, se registra `authority_failed_closed`, se usa COST-FIRST como `effectiveSelection` y la ejecucion continua hacia Token Governor/Budget Enforcement.
+- Si falla la persistencia de la decision de autoridad, se registra `authority_audit_failed`, la ejecucion se detiene antes de provider y no continua ni siquiera con COST-FIRST.
+- Token Governor valida siempre y exclusivamente la `effectiveSelection` final.
+- Budget Enforcement valida siempre y exclusivamente la `effectiveSelection` final.
+- No se puede ejecutar un provider antes de cerrar autoridad y presupuesto.
+- Una execution attempt puede producir como maximo una provider call.
+- No hay retries.
+- No hay fallback automatico.
+- No hay escalamiento automatico.
+- Toda decision de autoridad se persiste en Authority Decision Audit Log.
+- No se deben duplicar entradas de ledger ni audit entries para la misma etapa economica/de autoridad.
+- Rollback a COST-FIRST debe ocurrir antes de la provider call.
+- Si Token Governor o Budget Enforcement rechazan, no se recalcula seleccion y no se vuelve a invocar Authority Policy.
+- Human Approval Gate conserva su autoridad actual y puede pausar o rechazar despues de presupuesto.
+- Human Approval Gate no provoca rerouting ni nueva evaluacion de autoridad al reanudarse; debe conservar la misma `effectiveSelection` del intento pendiente.
+
+### Invariantes V0.13
+
+- Router COST-FIRST sigue produciendo la seleccion base.
+- Authority Policy nunca llama providers.
+- Authority Policy nunca reemplaza Token Governor ni Budget Enforcement.
+- Authority Policy nunca reemplaza Human Approval Gate.
+- `effectiveSelection` debe existir antes de Token Governor.
+- Token Governor y Budget Enforcement solo reciben la `effectiveSelection`; no reciben candidatos alternativos para recalcular routing.
+- Provider Adapter solo ve la seleccion efectiva normalizada.
+- Si Authority Policy falla, el sistema usa COST-FIRST y registra la razon.
+- Si Authority Decision Audit Log no puede persistir una decision, el sistema no debe avanzar a provider.
+- Ledger se registra solo despues de desenlace economico definitivo.
+- Audit log de autoridad se registra una vez por decision de autoridad.
+- Reanudaciones desde Human Approval Gate usan la `effectiveSelection` ya materializada para el intento pendiente.
+
+### Estados De Fallo V0.13
+
+- `authority_failed_closed`: Authority Policy falla o queda ambigua; se usa COST-FIRST como `effectiveSelection` y la ejecucion continua hacia Token Governor/Budget Enforcement.
+- `authority_audit_failed`: no se pudo persistir la decision de autoridad; la ejecucion se detiene antes de provider y no continua ni siquiera con COST-FIRST. Provider calls = 0.
+- `effective_selection_missing`: no se pudo determinar seleccion efectiva; no se llama provider.
+- `budget_rejected`: Token Governor o Budget Enforcement rechazo la `effectiveSelection`.
+- `needs_human`: Human Approval Gate pauso antes de provider.
+- `provider_error`: provider fallo despues de una decision de autoridad y presupuesto cerrados.
+
+Estos estados deben registrarse con razon auditable. No deben producir provider calls duplicadas.
+
+### Casos Limite V0.13
+
+- Authority Policy permite shadow: `effectiveSelection` usa shadow y se audita.
+- Authority Policy bloquea o falla: `effectiveSelection` usa COST-FIRST y se audita.
+- Audit log falla: la ejecucion se detiene antes de provider.
+- Token Governor rechaza `effectiveSelection`: no hay provider call.
+- Budget Enforcement rechaza `effectiveSelection`: no hay provider call.
+- Human Approval Gate requiere aprobacion: no hay provider call hasta aprobacion.
+- Provider falla: se normaliza error, se conserva audit log y se registra ledger segun reglas existentes.
+- Reanudacion tras aprobacion: no debe recalcular routing, no debe volver a Authority Policy y no debe duplicar decision de autoridad si ya existe una decision valida para esa etapa.
+
+### Criterios De Aceptacion V0.13
+
+- El flujo runtime respeta Context Compiler -> Router COST-FIRST -> Authority Policy -> `effectiveSelection` -> Token Governor -> Budget Enforcement -> Human Approval Gate -> Provider -> Evaluator -> Ledger / Audit.
+- `effectiveSelection` se materializa exactamente una vez por execution attempt y queda inmutable durante ese intento.
+- Token Governor y Budget Enforcement reciben y validan exclusivamente la `effectiveSelection`.
+- No se llama provider antes de autoridad, presupuesto y aprobacion aplicable.
+- Una execution attempt realiza maximo una provider call.
+- Toda decision de autoridad se persiste en Authority Decision Audit Log.
+- Rollback a COST-FIRST ocurre antes de provider call.
+- Rechazos de Token Governor o Budget Enforcement no recalculan seleccion ni reinvocan Authority Policy.
+- Reanudaciones de Human Approval Gate conservan la misma `effectiveSelection` del intento pendiente.
+- No se duplican ledger entries ni audit entries.
+- Human Approval Gate conserva su autoridad actual.
+- Router COST-FIRST permanece como fallback seguro.
+- No se agregan retries, fallback automatico, dashboard, aprendizaje automatico ni provider calls adicionales.

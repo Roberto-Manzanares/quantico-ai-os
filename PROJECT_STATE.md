@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.12 ready to close.
+Fase: V0.13 closed.
 
-Version objetivo: V0.12.
+Version objetivo: V0.13.
 
-Codigo implementado: si.
+Codigo implementado: si para V0.13.
 
-Estado actual: V0.12 implementada y validada por dry-run.
+Estado actual: V0.13 cerrada y congelada.
 
-Ultimo hito: dry-run final de Authority Decision Audit Log.
+Ultimo hito: cierre formal de V0.13 Authority Runtime Integration.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 142/142 pass.
+Tests actuales: 148/148 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -129,6 +129,39 @@ V0.12: implementada y validada por dry-run.
 Titulo V0.12: Authority Decision Audit Log.
 
 Objetivo V0.12: persistir y leer de forma auditable cada evaluacion de autoridad producida por la Limited Shadow Authority Policy, sin conectar todavia esa politica al runtime real de ejecucion.
+
+Commit de cierre V0.12: `fe40524eb19111f62a6c972a6fbaed92e9e1d62c`.
+
+V0.13: comienza como fase documental separada.
+
+Titulo V0.13: Authority Runtime Integration.
+
+Objetivo V0.13: integrar la Limited Shadow Authority Policy al flujo real del Kernel de forma controlada, auditable y fail-closed, determinando una unica `effectiveSelection` antes de presupuesto, aprobacion humana y llamada al provider.
+
+Flujo V0.13: Context Compiler -> Router COST-FIRST -> Authority Policy -> `effectiveSelection` -> Token Governor -> Budget Enforcement -> Human Approval Gate -> Provider -> Evaluator -> Ledger / Audit.
+
+Refinamiento V0.13: `authority_failed_closed` significa que Authority Policy falla o queda ambigua, se usa COST-FIRST como `effectiveSelection` y se continua hacia Token Governor/Budget Enforcement. `authority_audit_failed` significa que fallo la persistencia de la decision de autoridad; la ejecucion se detiene antes de provider y no continua ni siquiera con COST-FIRST.
+
+V0.13: cerrada y congelada.
+
+## Cierre V0.13
+
+V0.13 queda lista para cierre despues de implementar y validar por dry-run la integracion de Authority Runtime.
+
+La validacion confirmo:
+
+- Shadow allowed usa shadow en Token Governor, Budget Enforcement, Provider y Budget Ledger.
+- `authority_failed_closed` continua con COST-FIRST como `effectiveSelection`.
+- `authority_audit_failed` detiene la ejecucion antes de provider.
+- Token Governor reject no reroutea ni reevalua Authority Policy.
+- Budget Enforcement reject no reroutea ni reevalua Authority Policy.
+- `needs_human` + approve conserva exactamente la misma `effectiveSelection`.
+- Maximo una provider call por execution attempt.
+- Una sola Authority Decision Audit entry por intento.
+- Budget Ledger sin entradas duplicadas.
+- Router COST-FIRST intacto.
+- Provider calls reales: 0.
+- Tests: 148/148 pass.
 
 ## Cierre V0.12
 
@@ -441,8 +474,6 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.13 documentalmente antes de tocar codigo.
-- No conectar todavia la politica al runtime real.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
 - Mantener Router COST-FIRST como fallback seguro.
@@ -511,6 +542,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.11 queda validada con dry-run verificable de Limited Shadow Authority Policy, intervencion limitada permitida solo con umbrales completos, bloqueos fail-closed, rollback a `advisorAuthority = "none"`, auditoria completa, Router COST-FIRST intacto, cero provider calls reales y 134/134 tests.
 - V0.12 declara contrato de Authority Decision Audit Log, persistencia auditable, lectura historica, agregados allowed/blocked, bloqueos por razon, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.12 queda validada con dry-run verificable de Authority Decision Audit Log, casos allowed/blocked completos, lectura historica y por executionId, agregados correctos, append-only, persistencia tras reinicio, cero prompts/secretos persistidos, Router COST-FIRST intacto, policy sin runtime/API/CLI, cero provider calls reales y 142/142 tests.
+- V0.13 declara contrato de Authority Runtime Integration, flujo canonico, `effectiveSelection` inmutable por intento, invariantes, estados de fallo, auditoria obligatoria, validacion exclusiva de presupuesto sobre seleccion efectiva y garantia de maximo una provider call por execution attempt antes de tocar codigo.
+- V0.13 queda validada con dry-run verificable de Authority Runtime Integration, shadow allowed aplicado sobre `effectiveSelection`, fallos fail-closed/audit-failed, rechazos sin rerouting, reanudacion humana conservando seleccion efectiva, audit/ledger sin duplicados, Router COST-FIRST intacto y 148/148 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

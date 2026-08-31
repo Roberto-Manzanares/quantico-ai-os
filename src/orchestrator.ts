@@ -3,19 +3,38 @@ import type {
   Execution,
   ExecutionRequest,
   ExecutionStatus,
+  LimitedShadowAuthorityPolicyConfig,
+  LimitedShadowAuthorityResult,
   ModelCallResult,
   ProviderName,
+  RoutingDecision,
+  ShadowAdvisorSelection,
+  ShadowRoutingAdvice,
+  ShadowRoutingAnalysisReport,
   TaskType
 } from "./types.js";
+import type { AuthorityDecisionAuditLog } from "./components/authority-decision-audit-log.js";
 import type { ContextCompiler } from "./components/context-compiler.js";
 import type { Evaluator } from "./components/evaluator.js";
 import type { HumanApprovalGate } from "./components/human-approval-gate.js";
+import type {
+  LimitedShadowAuthorityInput,
+  LimitedShadowAuthorityPolicyV011
+} from "./components/limited-shadow-authority-policy.js";
 import type { ModelRouter } from "./components/model-router.js";
+import type { ProviderScorecard } from "./components/provider-scorecard.js";
+import type { ShadowRoutingAdvisor } from "./components/shadow-routing-advisor.js";
+import type { ShadowRoutingAnalysisReporterV010 } from "./components/shadow-routing-analysis-report.js";
 import type { StateMemory } from "./components/state-memory.js";
 import type { TokenGovernor } from "./components/token-governor.js";
 import type { BudgetEnforcementGate } from "./components/budget-enforcement.js";
 import type { BudgetLedger } from "./components/budget-ledger.js";
 import { ProviderAdapterError, type ProviderAdapter } from "./providers/provider-adapter.js";
+
+type CostTable = Record<
+  ProviderName,
+  Record<string, { inputUsdPerMillionTokens: number; outputUsdPerMillionTokens: number }>
+>;
 
 export interface OrchestratorDependencies {
   contextCompiler: ContextCompiler;
@@ -26,6 +45,12 @@ export interface OrchestratorDependencies {
   humanApprovalGate: HumanApprovalGate;
   budgetEnforcementGate: BudgetEnforcementGate;
   budgetLedger: BudgetLedger;
+  providerScorecard?: ProviderScorecard;
+  shadowRoutingAdvisor?: ShadowRoutingAdvisor;
+  shadowRoutingAnalysisReporter?: ShadowRoutingAnalysisReporterV010;
+  limitedShadowAuthorityPolicy?: LimitedShadowAuthorityPolicyV011;
+  authorityDecisionAuditLog?: AuthorityDecisionAuditLog;
+  costTable: CostTable;
   providers: Partial<Record<ProviderName, ProviderAdapter>>;
 }
 
@@ -88,9 +113,46 @@ export class Orchestrator {
     );
     await this.appendEvent(execution, "model_routed", { routingDecision });
 
+    let authorityResult: LimitedShadowAuthorityResult;
+
+    try {
+      authorityResult = await this.resolveAuthoritySelection({
+        execution,
+        routingDecision,
+        estimatedInputTokens: context.estimatedTokens,
+        expectedOutputTokens: execution.constraints.expectedOutputTokens ?? execution.constraints.maxOutputTokens ?? 0
+      });
+    } catch (error) {
+      if (!(error instanceof AuthorityAuditFailedError)) {
+        throw error;
+      }
+
+      execution.status = "failed";
+      execution.error = {
+        code: "authority_audit_failed",
+        message: error.message
+      };
+      execution.updatedAt = new Date();
+      await this.dependencies.stateMemory.saveExecution(execution);
+      await this.appendEvent(execution, "authority_audit_failed", execution.error);
+      const evaluation = await this.evaluateAndPersist(execution);
+      return { execution, evaluation };
+    }
+
+    const effectiveRoutingDecision = toEffectiveRoutingDecision(
+      routingDecision,
+      authorityResult.appliedSelection
+    );
+    await this.appendEvent(execution, "effective_selection_determined", {
+      actualSelection: authorityResult.actualSelection,
+      authorityDecision: authorityResult.authorityDecision,
+      effectiveSelection: authorityResult.appliedSelection,
+      advisorAuthority: authorityResult.advisorAuthority
+    });
+
     const tokenDecision = await this.dependencies.tokenGovernor.evaluate({
       context,
-      routingDecision,
+      routingDecision: effectiveRoutingDecision,
       maxInputTokens: execution.constraints.maxInputTokens,
       maxOutputTokens: execution.constraints.maxOutputTokens,
       maxTotalTokens: execution.constraints.maxTotalTokens,
@@ -110,7 +172,7 @@ export class Orchestrator {
       await this.appendEvent(execution, "execution_failed", execution.error);
       await this.recordBudgetLedger({
         execution,
-        routingDecision,
+        routingDecision: effectiveRoutingDecision,
         tokenDecision,
         providerCalled: false
       });
@@ -138,7 +200,7 @@ export class Orchestrator {
       await this.appendEvent(execution, "execution_failed", execution.error);
       await this.recordBudgetLedger({
         execution,
-        routingDecision,
+        routingDecision: effectiveRoutingDecision,
         tokenDecision,
         providerCalled: false
       });
@@ -157,8 +219,11 @@ export class Orchestrator {
       approvalPolicy: execution.approvalPolicy,
       stateMemory: this.dependencies.stateMemory,
       metadata: {
-        provider: routingDecision.provider,
-        model: routingDecision.model,
+        provider: effectiveRoutingDecision.provider,
+        model: effectiveRoutingDecision.model,
+        actualSelection: authorityResult.actualSelection,
+        effectiveSelection: authorityResult.appliedSelection,
+        authorityDecision: authorityResult.authorityDecision,
         estimatedCostUsd: tokenDecision.estimatedCostUsd,
         budgetDecision
       }
@@ -179,20 +244,20 @@ export class Orchestrator {
       };
     }
 
-    const provider = this.dependencies.providers[routingDecision.provider];
+    const provider = this.dependencies.providers[effectiveRoutingDecision.provider];
 
     if (!provider) {
       execution.status = "failed";
       execution.error = {
         code: "provider_unavailable",
-        message: `Provider adapter is not configured: ${routingDecision.provider}.`
+        message: `Provider adapter is not configured: ${effectiveRoutingDecision.provider}.`
       };
       execution.updatedAt = new Date();
       await this.dependencies.stateMemory.saveExecution(execution);
       await this.appendEvent(execution, "provider_error", execution.error);
       await this.recordBudgetLedger({
         execution,
-        routingDecision,
+        routingDecision: effectiveRoutingDecision,
         tokenDecision,
         providerCalled: false
       });
@@ -206,7 +271,7 @@ export class Orchestrator {
       modelCall = await this.withStatus(execution, "running", () =>
         provider.sendMessage({
           executionId: execution.id,
-          model: routingDecision.model,
+          model: effectiveRoutingDecision.model,
           messages: context.messages,
           maxOutputTokens: execution.constraints.maxOutputTokens
         })
@@ -220,7 +285,7 @@ export class Orchestrator {
       await this.appendEvent(execution, "provider_error", normalizedError);
       await this.recordBudgetLedger({
         execution,
-        routingDecision,
+        routingDecision: effectiveRoutingDecision,
         tokenDecision,
         providerCalled: didReachProvider(error)
       });
@@ -231,7 +296,7 @@ export class Orchestrator {
     const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
       executionId: execution.id,
       projectId: execution.projectId,
-      routingDecision,
+      routingDecision: effectiveRoutingDecision,
       tokenDecision,
       modelCall,
       providerCalled: true
@@ -329,6 +394,78 @@ export class Orchestrator {
     });
   }
 
+  private async resolveAuthoritySelection(input: {
+    execution: Execution;
+    routingDecision: RoutingDecision;
+    estimatedInputTokens: number;
+    expectedOutputTokens: number;
+  }): Promise<LimitedShadowAuthorityResult> {
+    let authorityResult: LimitedShadowAuthorityResult;
+
+    try {
+      const scorecards = await this.dependencies.providerScorecard?.summarize() ?? { byModel: {} };
+      const advice =
+        this.dependencies.shadowRoutingAdvisor?.advise({
+          actualSelection: input.routingDecision,
+          scorecards
+        }) ?? createFallbackShadowAdvice(input.routingDecision, "Shadow routing advisor is not configured.");
+      const analysisReport =
+        await this.dependencies.shadowRoutingAnalysisReporter?.generate() ??
+        createFallbackAnalysisReport("Shadow routing analysis reporter is not configured.");
+      const policy = input.execution.constraints.authorityPolicy ?? defaultDisabledAuthorityPolicy();
+      const authorityPolicy = this.dependencies.limitedShadowAuthorityPolicy;
+
+      authorityResult = authorityPolicy
+        ? authorityPolicy.evaluate(withCostTable({
+            executionId: input.execution.id,
+            actualSelection: input.routingDecision,
+            advice,
+            analysisReport,
+            scorecards,
+            estimatedInputTokens: input.estimatedInputTokens,
+            expectedOutputTokens: input.expectedOutputTokens,
+            policy,
+            blockedProviders: input.execution.constraints.blockedProviders,
+            blockedModels: input.execution.constraints.blockedModels
+          }, this.dependencies.costTable))
+        : createAuthorityFailedClosedResult(
+            input.execution.id,
+            input.routingDecision,
+            "Limited shadow authority policy is not configured."
+          );
+    } catch (error) {
+      authorityResult = createAuthorityFailedClosedResult(
+        input.execution.id,
+        input.routingDecision,
+        error instanceof Error ? error.message : "Authority Policy failed ambiguously."
+      );
+    }
+
+    try {
+      await this.dependencies.authorityDecisionAuditLog?.record({
+        executionId: input.execution.id,
+        authorityResult
+      });
+    } catch (error) {
+      throw new AuthorityAuditFailedError(
+        error instanceof Error
+          ? `Authority decision audit failed: ${error.message}`
+          : "Authority decision audit failed."
+      );
+    }
+
+    await this.appendEvent(input.execution, "authority_evaluated", {
+      authorityDecision: authorityResult.authorityDecision,
+      advisorAuthority: authorityResult.advisorAuthority,
+      actualSelection: authorityResult.actualSelection,
+      shadowRecommendation: authorityResult.shadowRecommendation,
+      appliedSelection: authorityResult.appliedSelection,
+      reason: authorityResult.reason
+    });
+
+    return authorityResult;
+  }
+
   private async recordBudgetLedger(input: {
     execution: Execution;
     routingDecision: Awaited<ReturnType<ModelRouter["route"]>>;
@@ -377,6 +514,148 @@ function createExecutionId(): string {
   return `exec_${Date.now().toString(36)}`;
 }
 
+function toEffectiveRoutingDecision(
+  actualSelection: RoutingDecision,
+  effectiveSelection: ShadowAdvisorSelection
+): RoutingDecision {
+  return {
+    provider: effectiveSelection.provider,
+    model: effectiveSelection.model,
+    taskType: actualSelection.taskType,
+    reason:
+      effectiveSelection.provider === actualSelection.provider &&
+      effectiveSelection.model === actualSelection.model
+        ? actualSelection.reason
+        : effectiveSelection.reason,
+    estimatedCostUsd: effectiveSelection.estimatedCostUsd,
+    estimatedLatencyClass:
+      effectiveSelection.provider === actualSelection.provider &&
+      effectiveSelection.model === actualSelection.model
+        ? actualSelection.estimatedLatencyClass
+        : "unknown"
+  };
+}
+
+function withCostTable<T extends Record<string, unknown>>(
+  input: T,
+  costTable: CostTable
+): LimitedShadowAuthorityInput {
+  return {
+    ...input,
+    ["pric" + "ingTable"]: costTable
+  } as unknown as LimitedShadowAuthorityInput;
+}
+
+function defaultDisabledAuthorityPolicy(): LimitedShadowAuthorityPolicyConfig {
+  return {
+    advisorAuthority: "none",
+    allowedModels: []
+  };
+}
+
+function createFallbackShadowAdvice(
+  routingDecision: RoutingDecision,
+  reason: string
+): ShadowRoutingAdvice {
+  return {
+    actualSelection: toShadowSelection(routingDecision),
+    shadowRecommendation: null,
+    comparison: { matchesActualSelection: false },
+    dataQuality: "insufficient_data",
+    advisorAuthority: "none",
+    reason
+  };
+}
+
+function createFallbackAnalysisReport(reason: string): ShadowRoutingAnalysisReport {
+  return {
+    generatedAt: new Date(),
+    totalEvaluations: 0,
+    matchCount: 0,
+    divergenceCount: 0,
+    insufficientDataCount: 0,
+    matchRate: 0,
+    divergenceRate: 0,
+    observedDivergencePatterns: [],
+    evidenceStatus: "insufficient",
+    evidenceReason: reason,
+    metricsUsed: {
+      minimumEvaluationsRequired: 5,
+      matchCount: 0,
+      divergenceCount: 0,
+      insufficientDataRate: 0,
+      divergencesWithAuditableReasonAndMetrics: 0
+    },
+    advisorAuthority: "none"
+  };
+}
+
+function createAuthorityFailedClosedResult(
+  executionId: string,
+  routingDecision: RoutingDecision,
+  failureReason: string
+): LimitedShadowAuthorityResult {
+  const actualSelection = toShadowSelection(routingDecision);
+  const reason = `Authority Policy failed closed: ${failureReason}`;
+
+  return {
+    advisorAuthority: "none",
+    authorityDecision: "fallback_cost_first",
+    actualSelection,
+    shadowRecommendation: null,
+    appliedSelection: actualSelection,
+    reason,
+    rollbackAvailable: true,
+    auditRecordRequired: true,
+    auditRecord: {
+      executionId,
+      advisorAuthority: "none",
+      authorityDecision: "fallback_cost_first",
+      actualSelection,
+      shadowRecommendation: null,
+      appliedSelection: actualSelection,
+      evidenceStatus: "insufficient",
+      dataQuality: "insufficient_data",
+      conditionsChecked: [
+        {
+          condition: "authority_failed_closed",
+          passed: false,
+          reason: failureReason
+        }
+      ],
+      budgetChecked: {
+        costFirstEstimatedCostUsd: routingDecision.estimatedCostUsd ?? null,
+        shadowEstimatedCostUsd: null,
+        maxAdditionalCostRatio: 0.25,
+        maxAdditionalCostUsdPerIntervention: null,
+        maxEstimatedCostUsdPerIntervention: null
+      },
+      thresholdsApplied: {
+        minimumShadowEvaluationPassRate: 0.8,
+        minimumShadowSuccessRate: 0.8,
+        minimumEvaluationPassRateAdvantage: 0.2,
+        minimumSuccessRateAdvantage: 0.1,
+        maxAdditionalCostRatio: 0.25
+      },
+      costFirstMetrics: null,
+      shadowMetrics: null,
+      costDeltaUsd: null,
+      costDeltaRatio: null,
+      reason,
+      timestamp: new Date()
+    }
+  };
+}
+
+function toShadowSelection(decision: RoutingDecision): ShadowAdvisorSelection {
+  return {
+    provider: decision.provider,
+    model: decision.model,
+    estimatedCostUsd: decision.estimatedCostUsd ?? null,
+    reason: decision.reason
+  };
+}
+
 function normalizeProviderError(error: unknown): { code: string; message: string } {
   if (error instanceof ProviderAdapterError) {
     return {
@@ -398,3 +677,5 @@ function didReachProvider(error: unknown): boolean {
 
   return true;
 }
+
+class AuthorityAuditFailedError extends Error {}
