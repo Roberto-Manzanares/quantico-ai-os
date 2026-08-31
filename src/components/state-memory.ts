@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
+  AuthorityDecisionAuditLogEntry,
   BudgetLedgerEntry,
   Execution,
   ExecutionEvent,
@@ -20,6 +21,8 @@ export interface StateMemory {
   listBudgetLedgerEntries(executionId?: string): Promise<BudgetLedgerEntry[]>;
   saveShadowRoutingEvaluation(entry: ShadowRoutingEvaluationLogEntry): Promise<void>;
   listShadowRoutingEvaluations(executionId?: string): Promise<ShadowRoutingEvaluationLogEntry[]>;
+  saveAuthorityDecisionAuditEntry(entry: AuthorityDecisionAuditLogEntry): Promise<void>;
+  listAuthorityDecisionAuditEntries(executionId?: string): Promise<AuthorityDecisionAuditLogEntry[]>;
 }
 
 export class InMemoryStateMemory implements StateMemory {
@@ -28,6 +31,7 @@ export class InMemoryStateMemory implements StateMemory {
   private readonly pendingApprovalSteps = new Map<string, PendingApprovalStep>();
   private readonly budgetLedgerEntries: BudgetLedgerEntry[] = [];
   private readonly shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[] = [];
+  private readonly authorityDecisionAuditEntries: AuthorityDecisionAuditLogEntry[] = [];
 
   async saveExecution(execution: Execution): Promise<void> {
     this.executions.set(execution.id, execution);
@@ -94,6 +98,20 @@ export class InMemoryStateMemory implements StateMemory {
 
     return this.shadowRoutingEvaluations.filter((entry) => entry.executionId === executionId);
   }
+
+  async saveAuthorityDecisionAuditEntry(entry: AuthorityDecisionAuditLogEntry): Promise<void> {
+    this.authorityDecisionAuditEntries.push(entry);
+  }
+
+  async listAuthorityDecisionAuditEntries(
+    executionId?: string
+  ): Promise<AuthorityDecisionAuditLogEntry[]> {
+    if (!executionId) {
+      return [...this.authorityDecisionAuditEntries];
+    }
+
+    return this.authorityDecisionAuditEntries.filter((entry) => entry.executionId === executionId);
+  }
 }
 
 interface StateFileData {
@@ -102,6 +120,7 @@ interface StateFileData {
   pendingApprovalSteps: PendingApprovalStep[];
   budgetLedgerEntries: BudgetLedgerEntry[];
   shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[];
+  authorityDecisionAuditEntries: AuthorityDecisionAuditLogEntry[];
 }
 
 export class FileStateMemory implements StateMemory {
@@ -212,6 +231,24 @@ export class FileStateMemory implements StateMemory {
     return state.shadowRoutingEvaluations.filter((entry) => entry.executionId === executionId);
   }
 
+  async saveAuthorityDecisionAuditEntry(entry: AuthorityDecisionAuditLogEntry): Promise<void> {
+    const state = await this.readState();
+    state.authorityDecisionAuditEntries.push(entry);
+    await this.writeState(state);
+  }
+
+  async listAuthorityDecisionAuditEntries(
+    executionId?: string
+  ): Promise<AuthorityDecisionAuditLogEntry[]> {
+    const state = await this.readState();
+
+    if (!executionId) {
+      return state.authorityDecisionAuditEntries;
+    }
+
+    return state.authorityDecisionAuditEntries.filter((entry) => entry.executionId === executionId);
+  }
+
   private async readState(): Promise<StateFileData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
@@ -223,7 +260,8 @@ export class FileStateMemory implements StateMemory {
           events: [],
           pendingApprovalSteps: [],
           budgetLedgerEntries: [],
-          shadowRoutingEvaluations: []
+          shadowRoutingEvaluations: [],
+          authorityDecisionAuditEntries: []
         };
       }
 
@@ -251,7 +289,8 @@ function normalizeState(state: Partial<StateFileData>): StateFileData {
     events: state.events ?? [],
     pendingApprovalSteps: state.pendingApprovalSteps ?? [],
     budgetLedgerEntries: state.budgetLedgerEntries ?? [],
-    shadowRoutingEvaluations: state.shadowRoutingEvaluations ?? []
+    shadowRoutingEvaluations: state.shadowRoutingEvaluations ?? [],
+    authorityDecisionAuditEntries: state.authorityDecisionAuditEntries ?? []
   };
 }
 

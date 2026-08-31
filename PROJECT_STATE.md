@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.11 ready to close.
+Fase: V0.12 ready to close.
 
-Version objetivo: V0.11.
+Version objetivo: V0.12.
 
 Codigo implementado: si.
 
-Estado actual: V0.11 implementada y validada por dry-run.
+Estado actual: V0.12 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Limited Shadow Authority Policy.
+Ultimo hito: dry-run final de Authority Decision Audit Log.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 134/134 pass.
+Tests actuales: 142/142 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -121,6 +121,35 @@ Objetivo V0.11: definir una politica explicita, reversible y fail-closed para pe
 Politica V0.11 refinada: una recomendacion shadow solo puede sustituir COST-FIRST si `evidenceStatus = "sufficient"`, `dataQuality = "complete"`, provider/model esta en allowlist explicita, supera umbrales minimos de pass rate/success rate, demuestra una ventaja minima verificable y no excede el margen maximo de costo adicional configurado.
 
 Semantica de metricas V0.11: `evaluationPassRate` y `successRate` provienen del Scorecard historico; `costFirstEstimatedCostUsd` y `shadowEstimatedCostUsd` se calculan para la llamada actual con pricing verificable y los mismos tokens estimados. `averageActualCostUsd` historico no autoriza presupuesto.
+
+Commit de cierre V0.11: `86a1bb1383bf11838047822360c17a4bceb5d8a9`.
+
+V0.12: implementada y validada por dry-run.
+
+Titulo V0.12: Authority Decision Audit Log.
+
+Objetivo V0.12: persistir y leer de forma auditable cada evaluacion de autoridad producida por la Limited Shadow Authority Policy, sin conectar todavia esa politica al runtime real de ejecucion.
+
+## Cierre V0.12
+
+V0.12 queda lista para cierre despues de implementar y validar por dry-run el Authority Decision Audit Log.
+
+La validacion confirmo:
+
+- Caso `allowed` persistido completo.
+- Caso `blocked` persistido completo.
+- `effectiveSelection` correcto en ambos casos.
+- `listEntries()` verificado.
+- `listEntries(executionId)` verificado.
+- `summarize()` correcto.
+- Resumen vacio devuelve ceros.
+- Append-only verificado.
+- Persistencia sobrevive reinicio de `FileStateMemory`.
+- No se persisten prompts ni secretos.
+- Router COST-FIRST intacto.
+- Policy sigue sin conectarse al runtime/API/CLI.
+- Provider calls reales: 0.
+- Tests: 142/142 pass.
 
 ## Cierre V0.11
 
@@ -412,7 +441,8 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.12 documentalmente antes de tocar codigo.
+- Definir V0.13 documentalmente antes de tocar codigo.
+- No conectar todavia la politica al runtime real.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
 - Mantener Router COST-FIRST como fallback seguro.
@@ -479,6 +509,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.10 queda validada con dry-run verificable de Shadow Routing Analysis Report, estados `insufficient` y `sufficient`, evidencia suficiente con 5 evaluaciones, Router COST-FIRST intacto, cero provider calls y 122/122 tests.
 - V0.11 declara contrato de Limited Shadow Authority Policy, condiciones exactas de influencia, umbrales deterministas, limites por provider/model, margen maximo de costo, presupuesto maximo, bloqueo inmediato, rollback y auditoria obligatoria antes de tocar codigo.
 - V0.11 queda validada con dry-run verificable de Limited Shadow Authority Policy, intervencion limitada permitida solo con umbrales completos, bloqueos fail-closed, rollback a `advisorAuthority = "none"`, auditoria completa, Router COST-FIRST intacto, cero provider calls reales y 134/134 tests.
+- V0.12 declara contrato de Authority Decision Audit Log, persistencia auditable, lectura historica, agregados allowed/blocked, bloqueos por razon, casos limite y criterios de aceptacion antes de tocar codigo.
+- V0.12 queda validada con dry-run verificable de Authority Decision Audit Log, casos allowed/blocked completos, lectura historica y por executionId, agregados correctos, append-only, persistencia tras reinicio, cero prompts/secretos persistidos, Router COST-FIRST intacto, policy sin runtime/API/CLI, cero provider calls reales y 142/142 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

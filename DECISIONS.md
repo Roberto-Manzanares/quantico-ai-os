@@ -1029,3 +1029,84 @@ Evidencia validada:
 Consecuencia:
 
 Quantico AI OS tiene una politica deterministica y auditable para autoridad shadow limitada, pero sigue sin autoridad global, sin fallback automatico, sin retries, sin dashboard, sin aprendizaje automatico y sin cambios al ProviderAdapter. COST-FIRST permanece como fallback seguro.
+
+## Decision 029: V0.12 Abre Authority Decision Audit Log
+
+Estado: aceptada.
+
+Decision:
+
+V0.12 se abre como fase documental para persistir y leer cada evaluacion de autoridad producida por la Limited Shadow Authority Policy.
+
+Razon:
+
+V0.11 define cuando una recomendacion shadow podria influir de forma limitada, reversible y fail-closed. Antes de conectar esa politica al runtime real, Quantico AI OS debe conservar un historial auditable de decisiones permitidas y bloqueadas para revisar comportamiento, razones, metricas y presupuestos sin afectar ejecuciones reales.
+
+Contrato definido:
+
+- Persistir `executionId`.
+- Persistir `actualSelection`.
+- Persistir `shadowRecommendation`.
+- Persistir `authorityDecision`: `allowed` o `blocked`.
+- Persistir `effectiveSelection`.
+- Persistir `advisorAuthority`.
+- Persistir `evidenceStatus` y `dataQuality`.
+- Persistir metricas y umbrales evaluados.
+- Persistir pricing y budgets usados.
+- Persistir `costDelta`.
+- Persistir `reason`.
+- Persistir `timestamp`.
+
+Lectura y agregados:
+
+- `listEntries()` devuelve historial completo.
+- `listEntries(executionId)` filtra por ejecucion.
+- `summarize()` devuelve `totalDecisions`, `allowedCount`, `blockedCount`, `allowedRate`, `blockedRate` y `blockedByReason`.
+
+Limites:
+
+- No conectar todavia la politica al runtime real.
+- No cambiar Router COST-FIRST.
+- No ejecutar provider calls.
+- No agregar fallback automatico.
+- No agregar retries.
+- No agregar dashboard.
+- No agregar aprendizaje automatico.
+- No introducir nueva base de datos.
+
+Consecuencia:
+
+El Authority Decision Audit Log sera observabilidad y trazabilidad de decisiones de autoridad. No concede autoridad nueva, no altera la seleccion real del Kernel y debe usar la persistencia existente de `State/Memory`.
+
+## Decision 030: V0.12 Cierra Authority Decision Audit Log Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.12 queda cerrada despues de implementar y validar por dry-run el Authority Decision Audit Log.
+
+Razon:
+
+El sistema ya puede persistir decisiones de autoridad `allowed` y `blocked` con datos auditables completos, listarlas, filtrarlas por ejecucion y calcular agregados simples sin conectar la politica al runtime real ni modificar Router COST-FIRST.
+
+Evidencia validada:
+
+- Caso `allowed` persistido completo.
+- Caso `blocked` persistido completo.
+- `effectiveSelection` correcto en ambos casos.
+- `listEntries()` devuelve historial completo.
+- `listEntries(executionId)` filtra correctamente.
+- `summarize()` calcula `totalDecisions`, `allowedCount`, `blockedCount`, `allowedRate`, `blockedRate` y `blockedByReason`.
+- Resumen vacio devuelve ceros.
+- Append-only verificado incluso con entradas repetidas.
+- Persistencia sobrevive reinicio de `FileStateMemory`.
+- No se persisten prompts ni secretos.
+- Router COST-FIRST intacto.
+- Policy sigue sin conectarse al runtime/API/CLI.
+- Provider calls reales: 0.
+- Tests: 142/142 pass.
+
+Consecuencia:
+
+Quantico AI OS conserva trazabilidad historica de evaluaciones de autoridad sin otorgar autoridad operativa adicional. La politica puede seguir analizandose antes de cualquier integracion futura al flujo real.

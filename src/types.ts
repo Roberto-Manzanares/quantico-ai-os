@@ -487,6 +487,49 @@ export interface LimitedShadowAuthorityResult {
   auditRecord: LimitedShadowAuthorityAuditRecord;
 }
 
+export type AuthorityDecisionAuditLogDecision = "allowed" | "blocked";
+
+export interface AuthorityDecisionAuditLogEntry {
+  id: string;
+  executionId: string;
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  authorityDecision: AuthorityDecisionAuditLogDecision;
+  effectiveSelection: ShadowAdvisorSelection;
+  advisorAuthority: LimitedShadowAdvisorAuthority;
+  evidenceStatus: ShadowRoutingEvidenceStatus;
+  dataQuality: ShadowAdvisorDataQuality;
+  metricsEvaluated: {
+    costFirstMetrics: ShadowAdvisorMetricsUsed | null;
+    shadowMetrics: ShadowAdvisorMetricsUsed | null;
+  };
+  thresholdsEvaluated: LimitedShadowAuthorityAuditRecord["thresholdsApplied"];
+  pricingUsed: {
+    costFirstEstimatedCostUsd: number | null;
+    shadowEstimatedCostUsd: number | null;
+  };
+  budgetsUsed: {
+    maxAdditionalCostRatio: number;
+    maxAdditionalCostUsdPerIntervention: number | null;
+    maxEstimatedCostUsdPerIntervention: number | null;
+  };
+  costDelta: {
+    costDeltaUsd: number | null;
+    costDeltaRatio: number | null;
+  };
+  reason: string;
+  timestamp: Date;
+}
+
+export interface AuthorityDecisionAuditLogSummary {
+  totalDecisions: number;
+  allowedCount: number;
+  blockedCount: number;
+  allowedRate: number;
+  blockedRate: number;
+  blockedByReason: Record<string, number>;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

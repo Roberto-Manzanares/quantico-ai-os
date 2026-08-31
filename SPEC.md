@@ -1557,3 +1557,132 @@ No debe persistir prompts, secretos, API keys, workspace IDs ni contenido sensib
 - La politica mantiene Router COST-FIRST como fallback seguro.
 - La politica exige auditoria de cada intervencion permitida o bloqueada.
 - No se implementa codigo, provider calls, fallback automatico, retries, dashboard, aprendizaje automatico ni autoridad global en la apertura documental.
+
+## Apertura V0.12
+
+Titulo: V0.12 - Authority Decision Audit Log.
+
+Estado de V0.11: cerrada y congelada.
+
+Commit de cierre V0.11: `86a1bb1383bf11838047822360c17a4bceb5d8a9`.
+
+V0.12 comienza como fase documental separada.
+
+### Objetivo V0.12
+
+Persistir y leer de forma auditable cada evaluacion de autoridad producida por la Limited Shadow Authority Policy, sin conectar todavia esa politica al runtime real de ejecucion.
+
+### Alcance V0.12
+
+Incluido:
+
+- Persistencia auditable de decisiones de autoridad.
+- Lectura de historial completo.
+- Lectura filtrada por `executionId`.
+- Agregados simples de decisiones permitidas y bloqueadas.
+- Bloqueos agrupados por razon.
+- Uso de `State/Memory` existente.
+
+Fuera de alcance:
+
+- Conectar la politica al runtime real.
+- Cambiar Router COST-FIRST.
+- Provider calls.
+- Fallback automatico.
+- Retries.
+- Dashboard.
+- Aprendizaje automatico.
+- Nueva base de datos.
+- Autoridad global.
+
+### Contrato Del Authority Decision Audit Log
+
+Entrada minima:
+
+- Resultado de Limited Shadow Authority Policy.
+- `executionId`.
+- `actualSelection`.
+- `shadowRecommendation`.
+- `authorityDecision`: `allowed` o `blocked`.
+- `effectiveSelection`.
+- `advisorAuthority`.
+- `evidenceStatus`.
+- `dataQuality`.
+- Metricas evaluadas.
+- Umbrales evaluados.
+- Pricing usado para la llamada actual.
+- Budgets usados.
+- `costDelta`.
+- `reason`.
+- `timestamp`.
+
+Entrada persistida minima:
+
+- `id`.
+- `executionId`.
+- `actualSelection`.
+- `shadowRecommendation`.
+- `authorityDecision`: `allowed` o `blocked`.
+- `effectiveSelection`.
+- `advisorAuthority`.
+- `evidenceStatus`.
+- `dataQuality`.
+- `metricsEvaluated`.
+- `thresholdsEvaluated`.
+- `pricingUsed`.
+- `budgetsUsed`.
+- `costDelta`.
+- `reason`.
+- `timestamp`.
+
+`authorityDecision = "allowed"` significa que la politica V0.11 permitio influencia shadow limitada en evaluacion aislada.
+
+`authorityDecision = "blocked"` significa que la politica V0.11 no permitio influencia shadow y la decision efectiva debe permanecer COST-FIRST o fail-closed segun razon registrada.
+
+### Lectura Y Agregados
+
+El log debe permitir:
+
+- `listEntries()`: devuelve historial completo.
+- `listEntries(executionId)`: devuelve entradas de una ejecucion.
+- `summarize()`: devuelve agregados simples.
+
+Agregados minimos:
+
+- `totalDecisions`.
+- `allowedCount`.
+- `blockedCount`.
+- `allowedRate`.
+- `blockedRate`.
+- `blockedByReason`.
+
+`blockedByReason` agrupa razones auditables sin ocultarlas tras un score.
+
+### Persistencia
+
+V0.12 debe usar la persistencia existente de `State/Memory`, compatible con `FileStateMemory`.
+
+No debe introducir base de datos nueva.
+
+No debe persistir prompts, API keys, workspace IDs ni secretos.
+
+### Casos Limite V0.12
+
+- Historial vacio: agregados en cero y tasas en cero.
+- Varias entradas del mismo `executionId`: lectura filtrada conserva todas.
+- Decision permitida: incrementa `allowedCount`.
+- Decision bloqueada: incrementa `blockedCount` y `blockedByReason`.
+- Razon de bloqueo faltante: la entrada debe ser rechazada o marcada como invalida; no se agrupa como razon silenciosa.
+- Datos de auditoria incompletos: fail-closed para persistencia o entrada invalida.
+- Reinicio de `FileStateMemory`: el historial debe sobrevivir.
+- Lectura del audit log no modifica State/Memory.
+
+### Criterios De Aceptacion V0.12
+
+- Cada evaluacion de autoridad puede persistirse con seleccion real, recomendacion shadow, decision, seleccion efectiva, autoridad, evidencia, data quality, metricas, umbrales, pricing, budgets, delta, razon y timestamp.
+- El historial puede listarse completo y filtrarse por `executionId`.
+- Los agregados calculan `totalDecisions`, `allowedCount`, `blockedCount`, `allowedRate`, `blockedRate` y `blockedByReason`.
+- La persistencia sobrevive reinicio de `FileStateMemory`.
+- El log no conecta la politica al runtime real.
+- Router COST-FIRST permanece intacto.
+- No se agregan provider calls, fallback, retries, dashboard, aprendizaje automatico, autoridad global ni nueva base de datos.

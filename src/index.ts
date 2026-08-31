@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./api.js";
 export * from "./orchestrator.js";
+export * from "./components/authority-decision-audit-log.js";
 export * from "./components/budget-enforcement.js";
 export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
