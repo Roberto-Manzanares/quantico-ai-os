@@ -531,6 +531,56 @@ export interface AuthorityDecisionAuditLogSummary {
   blockedByReason: Record<string, number>;
 }
 
+export type AuthorityRuntimeSafetyDataQuality = "complete" | "partial" | "insufficient";
+
+export type AuthorityRuntimeOutcomeComparisonStatus = "comparable" | "insufficient_data";
+
+export interface AuthorityRuntimeObservedOutcome {
+  provider: ProviderName;
+  model: string;
+  executionStatus: ExecutionStatus;
+  evaluationStatus: EvaluationStatus;
+}
+
+export interface AuthorityRuntimeOutcomeComparison {
+  executionId: string;
+  authorityDecision: AuthorityDecisionAuditLogDecision;
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  effectiveSelection: ShadowAdvisorSelection;
+  actualOutcome: AuthorityRuntimeObservedOutcome | null;
+  counterfactualOutcome: "unavailable";
+  comparisonStatus: AuthorityRuntimeOutcomeComparisonStatus;
+  reason: string;
+}
+
+export interface AuthorityRuntimeOutcomeAggregate {
+  executionCount: number;
+  byExecutionStatus: Partial<Record<ExecutionStatus, number>>;
+  byEvaluationStatus: Partial<Record<EvaluationStatus, number>>;
+}
+
+export interface AuthorityRuntimeSafetyMetricsReport {
+  generatedAt: Date;
+  totalAuthorityEvaluations: number;
+  allowedInterventions: number;
+  blockedInterventions: number;
+  allowedRate: number;
+  blockedRate: number;
+  failClosedCount: number;
+  failClosedByReason: Record<string, number>;
+  totalAdditionalCostUsdAuthorized: number;
+  averageAdditionalCostUsdAuthorized: number;
+  maxAdditionalCostUsdObserved: number;
+  outcomeComparisons: AuthorityRuntimeOutcomeComparison[];
+  outcomesByAuthorityDecision: {
+    allowed: AuthorityRuntimeOutcomeAggregate;
+    blocked: AuthorityRuntimeOutcomeAggregate;
+  };
+  dataQuality: AuthorityRuntimeSafetyDataQuality;
+  reasons: string[];
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

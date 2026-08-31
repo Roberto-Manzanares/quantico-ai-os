@@ -1813,3 +1813,171 @@ Estos estados deben registrarse con razon auditable. No deben producir provider 
 - Human Approval Gate conserva su autoridad actual.
 - Router COST-FIRST permanece como fallback seguro.
 - No se agregan retries, fallback automatico, dashboard, aprendizaje automatico ni provider calls adicionales.
+
+## Apertura V0.14
+
+Titulo: V0.14 - Authority Runtime Safety Metrics.
+
+Estado de V0.13: cerrada y congelada.
+
+Commit de cierre V0.13: `1e1c2885dc30788841b4c8607f17b5420e43f641`.
+
+V0.14 comienza como fase documental separada.
+
+### Objetivo V0.14
+
+Definir metricas read-only sobre decisiones reales de autoridad para medir seguridad, frecuencia de intervencion, fail-closed y costo adicional autorizado sin ampliar autoridad ni modificar Router COST-FIRST.
+
+### Fuentes V0.14
+
+El reporte debe usar solo datos ya persistidos:
+
+- Authority Decision Audit Log.
+- Budget Ledger.
+- Resultados de ejecucion persistidos.
+- `evaluationStatus` persistido.
+
+No debe ejecutar provider calls ni generar datos nuevos mediante llamadas externas.
+
+### Contrato De Authority Runtime Safety Metrics
+
+Entrada minima:
+
+- State/Memory vigente.
+- Historial de Authority Decision Audit Log.
+- Historial de Budget Ledger.
+- Ejecuciones persistidas asociadas cuando existan.
+- Opcionalmente filtros read-only por rango temporal, provider o model en fases futuras; V0.14 no requiere esos filtros para cerrar.
+
+Salida minima:
+
+- `totalAuthorityEvaluations`.
+- `allowedInterventions`.
+- `blockedInterventions`.
+- `allowedRate`.
+- `blockedRate`.
+- `failClosedCount`.
+- `failClosedByReason`.
+- `totalAdditionalCostUsdAuthorized`.
+- `averageAdditionalCostUsdAuthorized`.
+- `maxAdditionalCostUsdObserved`.
+- `outcomeComparison`.
+- `dataQuality`.
+- `reasons`.
+- `generatedAt`.
+
+`totalAuthorityEvaluations` cuenta decisiones auditadas de autoridad.
+
+`allowedInterventions` cuenta decisiones con `authorityDecision = "allowed"`.
+
+`blockedInterventions` cuenta decisiones con `authorityDecision = "blocked"`.
+
+`allowedRate = allowedInterventions / totalAuthorityEvaluations` cuando hay evaluaciones; si no hay evaluaciones, debe ser 0.
+
+`blockedRate = blockedInterventions / totalAuthorityEvaluations` cuando hay evaluaciones; si no hay evaluaciones, debe ser 0.
+
+`failClosedCount` cuenta bloqueos cuyo reason indique fail-closed, rollback, evidencia insuficiente, pricing/budget incompleto, auditoria fallida o condicion no verificable.
+
+`failClosedByReason` agrupa esos bloqueos por razon auditable.
+
+`totalAdditionalCostUsdAuthorized` suma solo `costDelta` positivo de intervenciones permitidas con costo auditable. Deltas negativos o cero no incrementan costo adicional autorizado.
+
+`averageAdditionalCostUsdAuthorized` promedia el costo adicional positivo autorizado entre intervenciones permitidas con costo adicional auditable. Si no hay intervenciones aplicables, debe ser 0.
+
+`maxAdditionalCostUsdObserved` es el mayor costo adicional positivo observado entre intervenciones permitidas con costo auditable. Si no hay costo adicional aplicable, debe ser 0.
+
+`reasons` debe conservar razones auditables de allowed/blocked/fail-closed sin ocultarlas tras un score opaco.
+
+### Comparacion De Outcomes
+
+`outcomeComparison` resume outcomes comparables entre COST-FIRST y shadow cuando exista evidencia suficiente.
+
+Para cada `executionId`, solo se puede atribuir outcome a la `effectiveSelection` realmente ejecutada.
+
+V0.14 nunca debe inferir outcome de la seleccion no ejecutada.
+
+El reporte no debe declarar que shadow "mejoro" o "empeoro" respecto a COST-FIRST si no existe evidencia ejecutada comparable. Los agregados de outcomes allowed vs blocked son descriptivos, no causales.
+
+Campos minimos de comparacion:
+
+- `actualOutcome`: outcome observado de la `effectiveSelection` realmente ejecutada.
+- `counterfactualOutcome`: `unavailable` cuando la alternativa no fue ejecutada.
+- `comparisonStatus`: `comparable` o `insufficient_data`.
+
+Una comparacion de outcome es valida solo si:
+
+- Existe una decision de autoridad auditada con `actualSelection` y `shadowRecommendation`.
+- Existe `effectiveSelection`.
+- Existe ejecucion persistida asociada con estado final terminal.
+- Existe `evaluationStatus` persistido.
+- Existe Budget Ledger aplicable para la ejecucion cuando se compare costo.
+- La decision y la ejecucion comparten `executionId`.
+- Las metricas necesarias para explicar la comparacion estan presentes.
+- Existe evidencia ejecutada comparable para las selecciones que se quieran contrastar.
+
+`comparisonStatus` debe quedar como `insufficient_data` cuando:
+
+- Falta ejecucion asociada.
+- Falta estado final terminal.
+- Falta `evaluationStatus`.
+- Falta `shadowRecommendation` o `actualSelection`.
+- Falta Budget Ledger cuando el reporte necesite costo.
+- El ledger tiene `missing_usage`, `missing_pricing` o costo no calculable para la comparacion solicitada.
+- Hay datos contradictorios entre audit log, ledger y ejecucion.
+- La alternativa no ejecutada no tiene evidencia real comparable.
+
+El costo adicional autorizado si puede calcularse desde pricing/audit aunque no exista comparacion de outcome valida.
+
+### Data Quality Del Reporte
+
+`dataQuality` debe ser:
+
+- `complete`: todas las decisiones auditadas tienen campos necesarios para los agregados solicitados y las comparaciones validas tienen ejecucion, evaluacion y ledger aplicable.
+- `partial`: el reporte puede calcular conteos basicos, pero una o mas comparaciones quedan como `insufficient_data`.
+- `insufficient`: no hay decisiones auditadas o faltan datos minimos para calcular conteos basicos.
+
+La degradacion de data quality debe explicarse con razones auditables.
+
+### Limites V0.14
+
+- No cambia Router COST-FIRST.
+- No cambia `advisorAuthority`.
+- No amplia autoridad.
+- No ejecuta provider calls.
+- No agrega fallback.
+- No agrega retries.
+- No agrega dashboard.
+- No agrega aprendizaje automatico.
+- No introduce nueva base de datos.
+- No modifica ProviderAdapter.
+
+### Casos Limite V0.14
+
+- Historial vacio: conteos y tasas en cero, `dataQuality = "insufficient"`.
+- Solo decisiones bloqueadas: allowed en cero, blocked calculado, outcome comparable segun datos disponibles.
+- Solo decisiones permitidas: blocked en cero, costo adicional autorizado calculado solo con deltas positivos auditables.
+- `costDelta` faltante en una intervencion permitida: costo adicional no se inventa; `dataQuality` debe degradar.
+- `costDelta` negativo: no cuenta como costo adicional autorizado.
+- Razones de fail-closed multiples: se agrupan por razon.
+- Ledger faltante o no calculable: comparacion de costo queda `insufficient_data`.
+- Ejecucion no terminal: comparacion de outcome queda `insufficient_data`.
+- Alternativa no ejecutada: `counterfactualOutcome = unavailable` y `comparisonStatus = "insufficient_data"` para cualquier afirmacion comparativa causal.
+- Costo adicional auditable con outcome insuficiente: los agregados de costo pueden calcularse y la comparacion de outcome queda `insufficient_data`.
+- Lectura del reporte no modifica State/Memory.
+
+### Criterios De Aceptacion V0.14
+
+- El reporte lee Authority Decision Audit Log, Budget Ledger y ejecuciones persistidas sin modificar State/Memory.
+- Calcula `totalAuthorityEvaluations`, `allowedInterventions`, `blockedInterventions`, `allowedRate` y `blockedRate`.
+- Calcula `failClosedCount` y `failClosedByReason` con razones auditables.
+- Calcula costo adicional autorizado total, promedio y maximo sin inventar costos faltantes.
+- Declara comparaciones de outcome validas solo cuando la evidencia persistida sea suficiente.
+- Atribuye `actualOutcome` solo a la `effectiveSelection` realmente ejecutada.
+- Declara `counterfactualOutcome = unavailable` para alternativas no ejecutadas.
+- Mantiene los agregados de outcomes allowed vs blocked como descriptivos, no causales.
+- Permite calcular costo adicional autorizado desde audit/pricing aunque `comparisonStatus = "insufficient_data"`.
+- Marca `insufficient_data` cuando falten ejecucion, evaluacion, ledger o metricas necesarias.
+- Devuelve `dataQuality` y razones auditables.
+- Router COST-FIRST permanece intacto.
+- `advisorAuthority` no cambia.
+- No se agregan provider calls, fallback, retries, dashboard, ML ni nueva DB.

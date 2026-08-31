@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.13 closed.
+Fase: V0.14 closed.
 
-Version objetivo: V0.13.
+Version objetivo: V0.14.
 
-Codigo implementado: si para V0.13.
+Codigo implementado: si para V0.14.
 
-Estado actual: V0.13 cerrada y congelada.
+Estado actual: V0.14 cerrada y congelada.
 
-Ultimo hito: cierre formal de V0.13 Authority Runtime Integration.
+Ultimo hito: cierre formal de V0.14 Authority Runtime Safety Metrics.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 148/148 pass.
+Tests actuales: 154/154 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -143,6 +143,43 @@ Flujo V0.13: Context Compiler -> Router COST-FIRST -> Authority Policy -> `effec
 Refinamiento V0.13: `authority_failed_closed` significa que Authority Policy falla o queda ambigua, se usa COST-FIRST como `effectiveSelection` y se continua hacia Token Governor/Budget Enforcement. `authority_audit_failed` significa que fallo la persistencia de la decision de autoridad; la ejecucion se detiene antes de provider y no continua ni siquiera con COST-FIRST.
 
 V0.13: cerrada y congelada.
+
+Commit de cierre V0.13: `1e1c2885dc30788841b4c8607f17b5420e43f641`.
+
+V0.14: comienza como fase documental separada.
+
+Titulo V0.14: Authority Runtime Safety Metrics.
+
+Objetivo V0.14: definir metricas read-only sobre decisiones reales de autoridad para medir intervenciones, bloqueos, fail-closed, costo adicional autorizado y outcomes comparables sin ampliar autoridad ni cambiar Router COST-FIRST.
+
+Fuentes V0.14: Authority Decision Audit Log, Budget Ledger, ejecuciones persistidas y `evaluationStatus` persistido.
+
+Semantica V0.14: para cada `executionId`, solo se atribuye outcome a la `effectiveSelection` realmente ejecutada. La alternativa no ejecutada queda con `counterfactualOutcome = "unavailable"` y `comparisonStatus = "insufficient_data"` cuando no exista evidencia ejecutada comparable. Los agregados de outcomes allowed vs blocked son descriptivos, no causales. El costo adicional autorizado puede calcularse desde audit/pricing aunque no exista comparacion de outcome valida.
+
+Limites V0.14: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no ejecutar provider calls, no agregar fallback, retries, dashboard, ML ni nueva base de datos.
+
+V0.14: cerrada y congelada.
+
+## Cierre V0.14
+
+V0.14 queda lista para cierre despues de implementar y validar por dry-run Authority Runtime Safety Metrics.
+
+La validacion confirmo:
+
+- Metricas globales: `totalAuthorityEvaluations`, `allowedInterventions`, `blockedInterventions`, `allowedRate` y `blockedRate`.
+- Fail-closed: `failClosedCount` y `failClosedByReason`.
+- Costo: `totalAdditionalCostUsdAuthorized`, `averageAdditionalCostUsdAuthorized` y `maxAdditionalCostUsdObserved`.
+- `actualOutcome` corresponde solo a la `effectiveSelection` realmente ejecutada.
+- `counterfactualOutcome = "unavailable"` para la alternativa no ejecutada.
+- `comparisonStatus = "insufficient_data"` cuando no existe evidencia comparable real.
+- No se declara mejora/empeoramiento causal entre COST-FIRST y shadow sin evidencia ejecutada comparable.
+- Agregados allowed vs blocked son descriptivos, no causales.
+- `dataQuality` y razones auditables correctas ante ejecucion faltante, ejecucion no terminal, `evaluationStatus` faltante y ledger faltante/no calculable.
+- Componente read-only: State/Memory sin cambios.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- Tests: 154/154 pass.
 
 ## Cierre V0.13
 
@@ -474,6 +511,7 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
+- Mantener el reporte read-only y sin autoridad operativa.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
 - Mantener Router COST-FIRST como fallback seguro.
@@ -544,6 +582,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.12 queda validada con dry-run verificable de Authority Decision Audit Log, casos allowed/blocked completos, lectura historica y por executionId, agregados correctos, append-only, persistencia tras reinicio, cero prompts/secretos persistidos, Router COST-FIRST intacto, policy sin runtime/API/CLI, cero provider calls reales y 142/142 tests.
 - V0.13 declara contrato de Authority Runtime Integration, flujo canonico, `effectiveSelection` inmutable por intento, invariantes, estados de fallo, auditoria obligatoria, validacion exclusiva de presupuesto sobre seleccion efectiva y garantia de maximo una provider call por execution attempt antes de tocar codigo.
 - V0.13 queda validada con dry-run verificable de Authority Runtime Integration, shadow allowed aplicado sobre `effectiveSelection`, fallos fail-closed/audit-failed, rechazos sin rerouting, reanudacion humana conservando seleccion efectiva, audit/ledger sin duplicados, Router COST-FIRST intacto y 148/148 tests.
+- V0.14 declara contrato de Authority Runtime Safety Metrics, metricas read-only sobre decisiones reales de autoridad, comparaciones de outcome solo con evidencia ejecutada suficiente, `actualOutcome`, `counterfactualOutcome = "unavailable"` para alternativas no ejecutadas, agregados descriptivos no causales, `dataQuality`, razones auditables y limites sin ampliar autoridad antes de tocar codigo.
+- V0.14 queda validada con dry-run verificable de Authority Runtime Safety Metrics, metricas globales, fail-closed, costo adicional autorizado, outcomes no contrafactuales, `insufficient_data`, lectura read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 154/154 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./api.js";
 export * from "./orchestrator.js";
 export * from "./components/authority-decision-audit-log.js";
+export * from "./components/authority-runtime-safety-metrics.js";
 export * from "./components/budget-enforcement.js";
 export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
@@ -22,6 +23,7 @@ export * from "./providers/provider-adapter.js";
 
 import { SkeletonContextCompiler } from "./components/context-compiler.js";
 import { SkeletonAuthorityDecisionAuditLog } from "./components/authority-decision-audit-log.js";
+import { SkeletonAuthorityRuntimeSafetyMetrics } from "./components/authority-runtime-safety-metrics.js";
 import { SkeletonBudgetEnforcementGate } from "./components/budget-enforcement.js";
 import { SkeletonBudgetLedger } from "./components/budget-ledger.js";
 import { SkeletonEvaluator } from "./components/evaluator.js";
@@ -64,6 +66,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
   );
   const limitedShadowAuthorityPolicy = new SkeletonLimitedShadowAuthorityPolicy();
   const authorityDecisionAuditLog = new SkeletonAuthorityDecisionAuditLog(stateMemory);
+  const authorityRuntimeSafetyMetrics = new SkeletonAuthorityRuntimeSafetyMetrics(stateMemory);
   const humanApprovalGate = new SkeletonHumanApprovalGate();
   const evaluator = new SkeletonEvaluator();
   const providers = options.providers ?? {
@@ -84,6 +87,7 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     shadowRoutingAnalysisReporter,
     limitedShadowAuthorityPolicy,
     authorityDecisionAuditLog,
+    authorityRuntimeSafetyMetrics,
     humanApprovalGate,
     evaluator,
     providers,

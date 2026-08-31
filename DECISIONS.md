@@ -1207,3 +1207,134 @@ Criterios de aceptacion:
 - Human Approval conserva la seleccion efectiva al pausar y aprobar.
 - Budget Ledger no duplica entradas por intento.
 - Router COST-FIRST permanece intacto como seleccion base y fallback seguro.
+
+## Decision 033: V0.14 Abre Authority Runtime Safety Metrics
+
+Estado: aceptada.
+
+Decision:
+
+V0.14 se abre como fase documental para definir metricas read-only sobre decisiones reales de autoridad ya persistidas.
+
+Razon:
+
+V0.13 integro autoridad limitada al runtime con auditoria obligatoria y fail-closed. Antes de ampliar cualquier autoridad, Quantico AI OS debe medir cuantas veces intervino shadow, cuantas veces fue bloqueado, por que razones fallo cerrado, cuanto costo adicional autorizo y si existen outcomes comparables suficientes.
+
+Fuentes permitidas:
+
+- Authority Decision Audit Log.
+- Budget Ledger.
+- Resultados de ejecucion persistidos.
+- `evaluationStatus` persistido.
+
+Contrato definido:
+
+- `totalAuthorityEvaluations`.
+- `allowedInterventions`.
+- `blockedInterventions`.
+- `allowedRate`.
+- `blockedRate`.
+- `failClosedCount`.
+- `failClosedByReason`.
+- `totalAdditionalCostUsdAuthorized`.
+- `averageAdditionalCostUsdAuthorized`.
+- `maxAdditionalCostUsdObserved`.
+- `outcomeComparison`.
+- `dataQuality`.
+- `reasons`.
+- `generatedAt`.
+
+Semantica:
+
+El reporte es read-only. No cambia Router COST-FIRST, no cambia `advisorAuthority`, no amplia autoridad y no ejecuta providers.
+
+El costo adicional autorizado se calcula solo desde `costDelta` positivo de intervenciones permitidas con costo auditable. Si falta `costDelta` o el costo no es verificable, no se inventa costo ni se asume cero silenciosamente; el reporte degrada `dataQuality`.
+
+Para cada `executionId`, solo se atribuye outcome a la `effectiveSelection` realmente ejecutada.
+
+V0.14 nunca infiere outcome de la seleccion no ejecutada.
+
+El reporte separa:
+
+- `actualOutcome`: outcome observado de la `effectiveSelection` realmente ejecutada.
+- `counterfactualOutcome`: `unavailable` cuando la alternativa no fue ejecutada.
+- `comparisonStatus`: `comparable` o `insufficient_data`.
+
+No se debe declarar que shadow "mejoro" o "empeoro" respecto a COST-FIRST sin evidencia ejecutada comparable.
+
+Los agregados de outcomes allowed vs blocked son descriptivos, no causales.
+
+Una comparacion de outcome es valida solo cuando existen decision auditada, `actualSelection`, `shadowRecommendation`, `effectiveSelection`, ejecucion terminal, `evaluationStatus`, ledger aplicable cuando se compare costo, mismo `executionId`, metricas necesarias y evidencia ejecutada comparable.
+
+`comparisonStatus` debe quedar como `insufficient_data` si falta ejecucion, estado terminal, `evaluationStatus`, seleccion/recomendacion, ledger necesario, costo calculable, evidencia ejecutada comparable o si existen contradicciones entre audit log, ledger y ejecucion.
+
+El costo adicional autorizado si puede calcularse desde pricing/audit aunque no exista comparacion de outcome valida.
+
+Limites:
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No ejecutar provider calls.
+- No agregar fallback automatico.
+- No agregar retries.
+- No agregar dashboard.
+- No agregar aprendizaje automatico.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+
+Criterios de aceptacion:
+
+- El reporte lee solo Authority Decision Audit Log, Budget Ledger y ejecuciones persistidas.
+- La lectura no modifica State/Memory.
+- Calcula conteos, tasas, fail-closed por razon y costos adicionales autorizados.
+- Declara outcome comparable solo con evidencia suficiente y ejecutada.
+- Atribuye `actualOutcome` solo a la `effectiveSelection` realmente ejecutada.
+- Declara `counterfactualOutcome = "unavailable"` para alternativas no ejecutadas.
+- Mantiene agregados de outcomes allowed vs blocked como descriptivos, no causales.
+- Permite calcular costo adicional autorizado desde audit/pricing aunque `comparisonStatus = "insufficient_data"`.
+- Marca `insufficient_data` cuando falten datos necesarios.
+- Devuelve `dataQuality` y razones auditables.
+- Router COST-FIRST permanece intacto y `advisorAuthority` no cambia.
+
+## Decision 034: V0.14 Cierra Authority Runtime Safety Metrics Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.14 queda cerrada despues de implementar y validar por dry-run Authority Runtime Safety Metrics como reporte read-only sobre decisiones reales de autoridad.
+
+Razon:
+
+La validacion demostro que Quantico AI OS puede medir frecuencia de intervencion, bloqueos, fail-closed, costo adicional autorizado y outcomes observados sin inferir contrafactuales, sin ampliar autoridad y sin modificar Router COST-FIRST.
+
+Evidencia validada:
+
+- Metricas globales: `totalAuthorityEvaluations`, `allowedInterventions`, `blockedInterventions`, `allowedRate` y `blockedRate`.
+- Fail-closed: `failClosedCount` y `failClosedByReason`.
+- Costo: `totalAdditionalCostUsdAuthorized`, `averageAdditionalCostUsdAuthorized` y `maxAdditionalCostUsdObserved`.
+- `actualOutcome` corresponde solo a la `effectiveSelection` realmente ejecutada.
+- `counterfactualOutcome = "unavailable"` para la alternativa no ejecutada.
+- `comparisonStatus = "insufficient_data"` cuando no existe evidencia comparable real.
+- No se declara mejora/empeoramiento causal entre COST-FIRST y shadow sin evidencia ejecutada comparable.
+- Agregados allowed vs blocked son descriptivos, no causales.
+- `dataQuality` y razones auditables correctas ante ejecucion faltante, ejecucion no terminal, `evaluationStatus` faltante y ledger faltante/no calculable.
+- Componente read-only: State/Memory sin cambios.
+- Router COST-FIRST intacto.
+- `advisorAuthority` intacto.
+- Provider calls reales: 0.
+- Tests: 154/154 pass.
+
+Consecuencia:
+
+Quantico AI OS ya puede observar seguridad operacional de autoridad limitada sin conceder autoridad nueva. El reporte mantiene separacion estricta entre outcomes observados y contrafactuales no ejecutados.
+
+Criterios de aceptacion:
+
+- Las metricas se calculan solo desde datos persistidos existentes.
+- El reporte no modifica State/Memory.
+- El reporte no llama providers.
+- COST-FIRST y `advisorAuthority` permanecen intactos.
+- Outcomes no ejecutados permanecen como `counterfactualOutcome = "unavailable"`.
+- Las comparaciones sin evidencia ejecutada quedan como `comparisonStatus = "insufficient_data"`.
