@@ -424,6 +424,69 @@ export interface ShadowRoutingAnalysisReport {
   advisorAuthority: "none";
 }
 
+export type LimitedShadowAdvisorAuthority = "none" | "limited";
+
+export type LimitedShadowAuthorityDecision =
+  | "allow_shadow_influence"
+  | "blocked"
+  | "fallback_cost_first";
+
+export interface LimitedShadowAuthorityPolicyConfig {
+  advisorAuthority: LimitedShadowAdvisorAuthority;
+  allowedModels: Array<{ provider: ProviderName; model: string }>;
+  maxAdditionalCostUsdPerIntervention?: number;
+  maxEstimatedCostUsdPerIntervention?: number;
+  minimumShadowEvaluationPassRate?: number;
+  minimumShadowSuccessRate?: number;
+  minimumEvaluationPassRateAdvantage?: number;
+  minimumSuccessRateAdvantage?: number;
+  maxAdditionalCostRatio?: number;
+}
+
+export interface LimitedShadowAuthorityAuditRecord {
+  executionId: string;
+  advisorAuthority: LimitedShadowAdvisorAuthority;
+  authorityDecision: LimitedShadowAuthorityDecision;
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  appliedSelection: ShadowAdvisorSelection;
+  evidenceStatus: ShadowRoutingEvidenceStatus;
+  dataQuality: ShadowAdvisorDataQuality;
+  conditionsChecked: Array<{ condition: string; passed: boolean; reason: string }>;
+  budgetChecked: {
+    costFirstEstimatedCostUsd: number | null;
+    shadowEstimatedCostUsd: number | null;
+    maxAdditionalCostRatio: number;
+    maxAdditionalCostUsdPerIntervention: number | null;
+    maxEstimatedCostUsdPerIntervention: number | null;
+  };
+  thresholdsApplied: {
+    minimumShadowEvaluationPassRate: number;
+    minimumShadowSuccessRate: number;
+    minimumEvaluationPassRateAdvantage: number;
+    minimumSuccessRateAdvantage: number;
+    maxAdditionalCostRatio: number;
+  };
+  costFirstMetrics: ShadowAdvisorMetricsUsed | null;
+  shadowMetrics: ShadowAdvisorMetricsUsed | null;
+  costDeltaUsd: number | null;
+  costDeltaRatio: number | null;
+  reason: string;
+  timestamp: Date;
+}
+
+export interface LimitedShadowAuthorityResult {
+  advisorAuthority: LimitedShadowAdvisorAuthority;
+  authorityDecision: LimitedShadowAuthorityDecision;
+  actualSelection: ShadowAdvisorSelection;
+  shadowRecommendation: ShadowAdvisorRecommendation | null;
+  appliedSelection: ShadowAdvisorSelection;
+  reason: string;
+  rollbackAvailable: boolean;
+  auditRecordRequired: true;
+  auditRecord: LimitedShadowAuthorityAuditRecord;
+}
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

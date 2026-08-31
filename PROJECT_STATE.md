@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.10 ready to close.
+Fase: V0.11 ready to close.
 
-Version objetivo: V0.10.
+Version objetivo: V0.11.
 
 Codigo implementado: si.
 
-Estado actual: V0.10 implementada y validada por dry-run.
+Estado actual: V0.11 implementada y validada por dry-run.
 
-Ultimo hito: dry-run final de Shadow Routing Analysis Report.
+Ultimo hito: dry-run final de Limited Shadow Authority Policy.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 122/122 pass.
+Tests actuales: 134/134 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -109,6 +109,33 @@ V0.10: implementada y validada por dry-run.
 Titulo V0.10: Shadow Routing Analysis Report.
 
 Objetivo V0.10: leer el Shadow Routing Evaluation Log y generar un reporte deterministico de patrones de match/divergence y evidencia disponible, sin cambiar routing ni autoridad.
+
+Commit de cierre V0.10: `e6df48c2c75109b3551cf11ea7d7bf3abd2788f8`.
+
+V0.11: implementada y validada por dry-run.
+
+Titulo V0.11: Limited Shadow Authority Policy.
+
+Objetivo V0.11: definir una politica explicita, reversible y fail-closed para permitir influencia limitada del Shadow Routing Advisor en una fase futura, usando solo evidencia V0.10 y manteniendo Router COST-FIRST como fallback seguro.
+
+Politica V0.11 refinada: una recomendacion shadow solo puede sustituir COST-FIRST si `evidenceStatus = "sufficient"`, `dataQuality = "complete"`, provider/model esta en allowlist explicita, supera umbrales minimos de pass rate/success rate, demuestra una ventaja minima verificable y no excede el margen maximo de costo adicional configurado.
+
+Semantica de metricas V0.11: `evaluationPassRate` y `successRate` provienen del Scorecard historico; `costFirstEstimatedCostUsd` y `shadowEstimatedCostUsd` se calculan para la llamada actual con pricing verificable y los mismos tokens estimados. `averageActualCostUsd` historico no autoriza presupuesto.
+
+## Cierre V0.11
+
+V0.11 queda lista para cierre despues de implementar y validar por dry-run la Limited Shadow Authority Policy.
+
+La validacion confirmo:
+
+- Intervencion permitida con `advisorAuthority = "limited"`.
+- Seleccion efectiva = shadow solo cuando todos los umbrales pasan.
+- Todos los casos de bloqueo fail-closed verificados.
+- Rollback deja `advisorAuthority = "none"` y seleccion efectiva COST-FIRST.
+- `auditRecord` completo en permitido y bloqueado.
+- Router COST-FIRST intacto.
+- Provider calls reales: 0.
+- Tests: 134/134 pass.
 
 Defaults economicos V0.2:
 
@@ -385,10 +412,19 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Definir V0.11 documentalmente antes de tocar codigo.
-- Mantener `advisorAuthority` sin cambios hasta decision explicita.
-- Mantener Router COST-FIRST sin cambios hasta decision explicita.
-- No convertir reportes shadow en autoridad operativa sin una fase separada y criterios verificables.
+- Definir V0.12 documentalmente antes de tocar codigo.
+- Mantener autoridad limitada explicitamente reversible.
+- Mantener `advisorAuthority = "none"` como rollback seguro.
+- Mantener Router COST-FIRST como fallback seguro.
+- Exigir `evidenceStatus = "sufficient"` y `dataQuality` suficiente antes de cualquier influencia shadow.
+- Exigir `dataQuality = "complete"` para sustitucion.
+- Exigir `minimumShadowEvaluationPassRate` 0.8 y `minimumShadowSuccessRate` 0.8.
+- Exigir ventaja minima verificable: `minimumEvaluationPassRateAdvantage` 0.2 o `minimumSuccessRateAdvantage` 0.1.
+- Exigir margen maximo de costo adicional: `maxAdditionalCostRatio` 0.25 y `maxAdditionalCostUsdPerIntervention` configurado.
+- Exigir `shadowEstimatedCostUsd <= costFirstEstimatedCostUsd * 1.25` usando costos calculados para la llamada actual.
+- Exigir allowlist explicita por provider/model.
+- Exigir presupuesto maximo verificable para cualquier intervencion.
+- Bloquear influencia shadow cuando falte pricing, el pricing no sea comparable, falte presupuesto seguro, evidencia suficiente, data quality completa, metricas comparables o auditoria.
 - No agregar ranking automatico, fallback ni retries.
 - Mantener Budget Enforcement entre Token Governor y Human Approval Gate.
 - Mantener `maxExecutionCostUsd` y `maxProjectCostUsd` como presupuestos acumulados opcionales.
@@ -441,6 +477,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.9 queda validada con dry-run verificable de Shadow Routing Evaluation Log, match/divergence/insufficient_data, lectura historica, filtro por executionId, persistencia tras reinicio, agregados y 114/114 tests.
 - V0.10 declara contrato de Shadow Routing Analysis Report, evidencia disponible, patrones observables, casos limite y criterios de aceptacion antes de tocar codigo.
 - V0.10 queda validada con dry-run verificable de Shadow Routing Analysis Report, estados `insufficient` y `sufficient`, evidencia suficiente con 5 evaluaciones, Router COST-FIRST intacto, cero provider calls y 122/122 tests.
+- V0.11 declara contrato de Limited Shadow Authority Policy, condiciones exactas de influencia, umbrales deterministas, limites por provider/model, margen maximo de costo, presupuesto maximo, bloqueo inmediato, rollback y auditoria obligatoria antes de tocar codigo.
+- V0.11 queda validada con dry-run verificable de Limited Shadow Authority Policy, intervencion limitada permitida solo con umbrales completos, bloqueos fail-closed, rollback a `advisorAuthority = "none"`, auditoria completa, Router COST-FIRST intacto, cero provider calls reales y 134/134 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

@@ -1307,3 +1307,253 @@ El umbral minimo exacto debe ser configurable o declarado explicitamente en la i
 - `advisorAuthority` permanece `none`.
 - El reporte no modifica Router COST-FIRST ni ejecuciones reales.
 - No se agregan provider calls, fallback, retries, dashboard, IA evaluadora, ranking opaco ni decisiones automaticas.
+
+## Apertura V0.11
+
+Titulo: V0.11 - Limited Shadow Authority Policy.
+
+Estado de V0.10: cerrada y congelada.
+
+Commit de cierre V0.10: `e6df48c2c75109b3551cf11ea7d7bf3abd2788f8`.
+
+V0.11 comienza como fase documental separada.
+
+### Objetivo V0.11
+
+Definir una politica explicita, reversible y fail-closed para permitir que el Shadow Routing Advisor pueda influir de forma limitada en una decision futura, usando solo evidencia V0.10, sin aprendizaje automatico, sin autoridad global y sin cambiar todavia el Router COST-FIRST.
+
+### Alcance V0.11
+
+Incluido:
+
+- Politica de autoridad limitada para recomendaciones shadow.
+- Condiciones exactas de activacion.
+- Limites por provider/model.
+- Presupuesto maximo permitido para cualquier intervencion.
+- Requisitos minimos de `evidenceStatus` y `dataQuality`.
+- Condiciones de bloqueo inmediato.
+- Rollback explicito a `advisorAuthority = "none"`.
+- Auditoria obligatoria de cada intervencion.
+- Router COST-FIRST como fallback seguro.
+
+Fuera de alcance:
+
+- Implementacion de autoridad limitada.
+- Autoridad global del Advisor.
+- Aprendizaje automatico.
+- Ranking opaco.
+- Provider calls adicionales.
+- Fallback automatico.
+- Retries.
+- Dashboard.
+- Nuevos providers.
+- Cambios de ProviderAdapter.
+- Cambios obligatorios al Router COST-FIRST.
+
+### Contrato De Limited Shadow Authority Policy
+
+Entrada minima:
+
+- Seleccion real propuesta por Router COST-FIRST.
+- Recomendacion del Shadow Routing Advisor.
+- Reporte V0.10 con `evidenceStatus`.
+- `dataQuality` del scorecard usado por la recomendacion.
+- Presupuesto de la ejecucion y presupuesto de proyecto cuando aplique.
+- Provider/model permitidos, bloqueados y preferidos.
+- Politica explicita de autoridad limitada.
+
+Salida minima:
+
+- `advisorAuthority`: `none` o `limited`.
+- `authorityDecision`: `allow_shadow_influence`, `blocked`, o `fallback_cost_first`.
+- `actualSelection`.
+- `shadowRecommendation`.
+- `appliedSelection` cuando la politica permita influencia.
+- `reason`.
+- `conditionsChecked`.
+- `budgetChecked`.
+- `rollbackAvailable`: siempre `true` cuando `advisorAuthority` sea `limited`.
+- `auditRecordRequired`: siempre `true`.
+
+### Condiciones Exactas Para Influencia
+
+El Advisor puede sustituir la seleccion COST-FIRST solo cuando todas las condiciones siguientes se cumplen:
+
+- La politica explicita habilita `advisorAuthority = "limited"` para esa ejecucion o configuracion local.
+- El reporte V0.10 declara `evidenceStatus = "sufficient"`.
+- La recomendacion shadow tiene `dataQuality = "complete"`.
+- La recomendacion incluye `provider`, `model`, razones y metricas auditables.
+- El provider/model recomendado esta dentro de los limites permitidos por politica.
+- El provider/model recomendado no esta bloqueado por `blockedProviders` ni `blockedModels`.
+- No existe `preferredProvider` ni `preferredModel` incompatible con la recomendacion.
+- El costo estimado de la seleccion recomendada es conocido, proviene de pricing configurado y no excede el presupuesto maximo de autoridad limitada.
+- El costo estimado adicional contra COST-FIRST no excede el margen maximo permitido.
+- Las metricas historicas minimas superan los umbrales definidos en la politica.
+- Token Governor y Budget Enforcement permitirian la llamada antes de cualquier ejecucion.
+- Human Approval Gate no requiere aprobacion pendiente para la accion propuesta.
+
+Si cualquier condicion falla, el resultado debe ser `fallback_cost_first` o `blocked` de forma auditable.
+
+### Politica Deterministica De Intervencion Limitada
+
+La politica V0.11 evita scores opacos. La decision debe evaluarse con comparaciones directas y umbrales declarados.
+
+`evaluationPassRate` y `successRate` provienen del Provider Scorecard historico por provider/model. Estas metricas historicas sirven para justificar mejora de calidad/resultado, no para autorizar presupuesto.
+
+`costFirstEstimatedCostUsd` y `shadowEstimatedCostUsd` se calculan para la llamada actual usando pricing verificable y los mismos tokens estimados de entrada/salida. `averageActualCostUsd` historico no se usa para autorizar presupuesto ni para demostrar que una intervencion cabe en presupuesto.
+
+Umbrales minimos:
+
+- `minimumEvaluationsRequired`: 5.
+- `requiredEvidenceStatus`: `sufficient`.
+- `requiredDataQuality`: `complete`.
+- `minimumShadowEvaluationPassRate`: 0.8.
+- `minimumShadowSuccessRate`: 0.8.
+- `minimumEvaluationPassRateAdvantage`: 0.2.
+- `minimumSuccessRateAdvantage`: 0.1.
+- `maxAdditionalCostRatio`: 0.25.
+- `maxAdditionalCostUsdPerIntervention`: debe estar configurado explicitamente.
+- `maxEstimatedCostUsdPerIntervention`: debe estar configurado explicitamente.
+
+Una recomendacion shadow puede sustituir COST-FIRST solo si:
+
+- `shadow.evaluationPassRate >= minimumShadowEvaluationPassRate`.
+- `shadow.successRate >= minimumShadowSuccessRate`.
+- `shadow.evaluationPassRate - costFirst.evaluationPassRate >= minimumEvaluationPassRateAdvantage`, o
+- `shadow.successRate - costFirst.successRate >= minimumSuccessRateAdvantage`.
+- `shadowEstimatedCostUsd <= costFirstEstimatedCostUsd * (1 + maxAdditionalCostRatio)`.
+- `shadowEstimatedCostUsd - costFirstEstimatedCostUsd <= maxAdditionalCostUsdPerIntervention`.
+- `shadowEstimatedCostUsd <= maxEstimatedCostUsdPerIntervention`.
+
+La mejora de calidad/resultado debe estar respaldada por metricas persistidas. Si falta cualquier metrica necesaria para comparar, la politica debe hacer fail-closed y mantener COST-FIRST.
+
+Si el pricing de COST-FIRST y shadow falta, no es verificable o no es comparable para la misma llamada y los mismos tokens estimados, la politica debe hacer fail-closed.
+
+### Limites Por Provider/Model
+
+La politica debe declarar una allowlist explicita de provider/model para autoridad limitada.
+
+Ejemplo de estructura documental:
+
+- `allowedModels`: lista de pares `provider:model`.
+- `maxEstimatedCostUsdPerIntervention`.
+- `maxEstimatedCostUsdPerExecution`.
+- `requiredDataQuality`.
+- `requiredEvidenceStatus`.
+- `minimumShadowEvaluationPassRate`.
+- `minimumShadowSuccessRate`.
+- `minimumEvaluationPassRateAdvantage`.
+- `minimumSuccessRateAdvantage`.
+- `maxAdditionalCostRatio`.
+- `maxAdditionalCostUsdPerIntervention`.
+
+No existe autoridad global sobre todos los providers/modelos. Un provider/model ausente de la allowlist queda fuera de autoridad limitada aunque aparezca en el Scorecard.
+
+La allowlist aplica antes de comparar metricas. Si la recomendacion shadow no aparece como par exacto `provider:model`, la intervencion queda bloqueada aunque sus metricas sean mejores.
+
+### Presupuesto Maximo Permitido
+
+La autoridad limitada no puede elevar costo sin control explicito.
+
+Reglas:
+
+- Toda intervencion debe tener `estimatedCostUsd` verificable antes de ejecutar.
+- Si falta pricing, bloquear y usar fallback seguro.
+- `maxEstimatedCostUsdPerIntervention` debe existir para permitir `advisorAuthority = "limited"`.
+- `maxAdditionalCostRatio` y `maxAdditionalCostUsdPerIntervention` deben existir para permitir sustitucion de COST-FIRST por una recomendacion mas cara.
+- La comparacion de costo debe usar `costFirstEstimatedCostUsd` y `shadowEstimatedCostUsd` calculados para la llamada actual con los mismos tokens estimados.
+- `averageActualCostUsd` historico puede aparecer como metrica informativa del Scorecard, pero no autoriza presupuesto ni reemplaza el calculo de costo estimado actual.
+- La seleccion influida no puede exceder Token Governor ni Budget Enforcement.
+- COST-FIRST sigue siendo el fallback si el presupuesto de autoridad limitada no puede demostrarse.
+
+### Condiciones De Bloqueo Inmediato
+
+La politica debe bloquear influencia shadow y volver a COST-FIRST cuando ocurra cualquiera de estas condiciones:
+
+- `evidenceStatus != "sufficient"`.
+- `dataQuality` insuficiente o desconocida.
+- Falta `differenceReason`, `metricsUsed` o `shadowRecommendation`.
+- Provider/model recomendado bloqueado.
+- Provider/model recomendado fuera de allowlist.
+- Pricing faltante o no verificable.
+- Metricas minimas faltantes para COST-FIRST o shadow.
+- Ventaja de calidad/resultado menor a los umbrales.
+- Costo adicional mayor a `maxAdditionalCostRatio`.
+- Costo adicional mayor a `maxAdditionalCostUsdPerIntervention`.
+- Presupuesto insuficiente.
+- Budget Enforcement devuelve bloqueo o `budget_unknown`.
+- Human Approval Gate devuelve `needs_approval` o `rejected` antes de la accion sensible.
+- Error de lectura del Scorecard, Evaluation Log o Analysis Report.
+- Configuracion de autoridad ambigua o ausente.
+
+### Rollback
+
+Rollback significa volver a `advisorAuthority = "none"` y usar Router COST-FIRST como seleccion efectiva.
+
+Debe poder activarse por:
+
+- Configuracion explicita.
+- Evidencia insuficiente.
+- Aumento de divergencias no explicadas.
+- Fallas de auditoria.
+- Error de presupuesto.
+- Error de persistencia.
+- Deteccion de metrica faltante o inconsistente.
+- Cualquier condicion no verificable.
+
+El rollback debe ser inmediato y fail-closed: ante duda, se registra la razon, se establece `advisorAuthority = "none"` para la decision en curso y Router COST-FIRST vuelve a ser la seleccion efectiva.
+
+### Auditoria Obligatoria
+
+Cada intervencion permitida o bloqueada debe registrar:
+
+- `executionId`.
+- `advisorAuthority`.
+- `authorityDecision`.
+- `actualSelection`.
+- `shadowRecommendation`.
+- `appliedSelection` cuando aplique.
+- `evidenceStatus`.
+- `dataQuality`.
+- `conditionsChecked`.
+- `budgetChecked`.
+- `thresholdsApplied`.
+- `costFirstMetrics`.
+- `shadowMetrics`.
+- `costDeltaUsd`.
+- `costDeltaRatio`.
+- `reason`.
+- `timestamp`.
+
+No debe persistir prompts, secretos, API keys, workspace IDs ni contenido sensible innecesario.
+
+### Casos Limite V0.11
+
+- `evidenceStatus = "insufficient"`: fallback a COST-FIRST.
+- `dataQuality` parcial o desconocida: fallback o bloqueo segun politica, nunca influencia silenciosa.
+- Provider/model recomendado bloqueado: bloqueo inmediato de influencia shadow.
+- Provider/model recomendado sin pricing: bloqueo inmediato de influencia shadow.
+- Recomendacion mas cara que excede presupuesto de autoridad limitada: bloqueo inmediato.
+- Scorecard disponible pero reporte V0.10 ausente: fallback a COST-FIRST.
+- Configuracion ambigua de allowlist: fail-closed.
+- Preferred provider/model explicito del usuario: override explicito conserva prioridad salvo politica posterior documentada.
+- Shadow mejora costo pero no calidad/resultado: no sustituye COST-FIRST.
+- Shadow mejora calidad pero excede margen maximo de costo: fail-closed.
+- Shadow tiene metricas incompletas: fail-closed.
+- COST-FIRST no tiene metricas historicas comparables: fail-closed.
+- Rollback activado: `advisorAuthority = "none"` y COST-FIRST decide.
+
+### Criterios De Aceptacion V0.11
+
+- La politica define condiciones exactas para permitir influencia shadow limitada.
+- La politica exige `evidenceStatus = "sufficient"` antes de cualquier influencia.
+- La politica exige `dataQuality = "complete"` y metricas auditables.
+- La politica define umbrales explicitos de pass rate, success rate, ventaja minima y margen maximo de costo.
+- La politica permite sustitucion de COST-FIRST solo cuando shadow supera los umbrales minimos y no excede los limites de costo.
+- La politica define limites por provider/model mediante allowlist explicita.
+- La politica define presupuesto maximo verificable para intervenciones.
+- La politica bloquea influencia cuando falta pricing o presupuesto seguro.
+- La politica define rollback a `advisorAuthority = "none"`.
+- La politica mantiene Router COST-FIRST como fallback seguro.
+- La politica exige auditoria de cada intervencion permitida o bloqueada.
+- No se implementa codigo, provider calls, fallback automatico, retries, dashboard, aprendizaje automatico ni autoridad global en la apertura documental.

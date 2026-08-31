@@ -6,6 +6,7 @@ export * from "./components/budget-ledger.js";
 export * from "./components/context-compiler.js";
 export * from "./components/evaluator.js";
 export * from "./components/human-approval-gate.js";
+export * from "./components/limited-shadow-authority-policy.js";
 export * from "./components/model-router.js";
 export * from "./components/provider-scorecard.js";
 export * from "./components/shadow-routing-advisor.js";

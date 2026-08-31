@@ -924,3 +924,108 @@ Reporte suficiente validado:
 Consecuencia:
 
 Quantico AI OS puede analizar evidencia shadow acumulada y producir un reporte read-only para decidir, en una fase futura, si tiene sentido considerar autoridad limitada. V0.10 no modifica routing real, no ejecuta llamadas adicionales, no introduce fallback, retries, dashboard, IA evaluadora ni aprendizaje automatico.
+
+## Decision 027: V0.11 Abre Limited Shadow Authority Policy
+
+Estado: aceptada.
+
+Decision:
+
+V0.11 se abre como fase documental para definir una politica de autoridad limitada, explicita, reversible y fail-closed para el Shadow Routing Advisor.
+
+Razon:
+
+V0.10 ya puede declarar `evidenceStatus = "sufficient"` a partir de evidencia historica auditable, pero esa evidencia no debe convertirse en autoridad operativa global ni automatica. Antes de tocar codigo, Quantico AI OS necesita una politica verificable que limite donde, cuando y bajo que presupuesto el Advisor podria influir en una seleccion futura.
+
+Politica definida:
+
+- El Advisor solo puede influir si existe configuracion explicita de `advisorAuthority = "limited"`.
+- `evidenceStatus` debe ser `sufficient`.
+- `dataQuality` debe ser `complete`.
+- La recomendacion debe incluir provider/model, razones y metricas auditables.
+- Provider/model recomendado debe estar en una allowlist explicita.
+- Provider/model recomendado no puede estar bloqueado.
+- Preferred provider/model explicito conserva prioridad salvo decision documental posterior.
+- Pricing debe existir y ser verificable.
+- Presupuesto maximo por intervencion debe existir y cumplirse.
+- La sustitucion requiere metricas comparables entre COST-FIRST y shadow.
+- La recomendacion shadow debe tener `evaluationPassRate >= 0.8`.
+- La recomendacion shadow debe tener `successRate >= 0.8`.
+- La recomendacion shadow debe superar a COST-FIRST por al menos `0.2` en `evaluationPassRate` o por al menos `0.1` en `successRate`.
+- `evaluationPassRate` y `successRate` provienen del Provider Scorecard historico por provider/model.
+- `costFirstEstimatedCostUsd` y `shadowEstimatedCostUsd` se calculan para la llamada actual con pricing verificable y los mismos tokens estimados.
+- `averageActualCostUsd` historico no se usa para autorizar presupuesto.
+- `shadowEstimatedCostUsd <= costFirstEstimatedCostUsd * 1.25`.
+- El costo adicional absoluto no puede exceder `maxAdditionalCostUsdPerIntervention`.
+- El costo estimado shadow no puede exceder `maxEstimatedCostUsdPerIntervention`.
+- Pricing faltante, no verificable o no comparable para la llamada actual fuerza fail-closed.
+- Token Governor y Budget Enforcement conservan autoridad de presupuesto.
+- Human Approval Gate sigue aplicando antes de acciones sensibles.
+- Router COST-FIRST permanece como fallback seguro.
+
+Bloqueo inmediato:
+
+- `evidenceStatus` distinto de `sufficient`.
+- `dataQuality` insuficiente o desconocida.
+- Falta de `differenceReason`, `metricsUsed` o `shadowRecommendation`.
+- Provider/model fuera de allowlist o bloqueado.
+- Pricing faltante.
+- Metricas faltantes o no comparables.
+- Ventaja de calidad/resultado inferior al umbral.
+- Costo adicional superior al margen relativo o absoluto permitido.
+- Presupuesto insuficiente o desconocido.
+- `budget_unknown`.
+- Configuracion ambigua.
+- Error de lectura de Scorecard, Evaluation Log o Analysis Report.
+- Fallo de auditoria.
+
+Rollback:
+
+Rollback significa volver inmediatamente a `advisorAuthority = "none"` y usar Router COST-FIRST como seleccion efectiva. El rollback debe poder activarse por configuracion explicita, evidencia insuficiente, presupuesto inseguro, metrica faltante o inconsistente, falla de persistencia, falla de auditoria o cualquier condicion no verificable.
+
+Auditoria:
+
+Cada intervencion permitida o bloqueada debe registrar `executionId`, `advisorAuthority`, decision aplicada, seleccion COST-FIRST, recomendacion shadow, seleccion aplicada cuando exista, `evidenceStatus`, `dataQuality`, condiciones verificadas, umbrales aplicados, metricas COST-FIRST, metricas shadow, presupuesto verificado, delta de costo absoluto, delta de costo relativo, razon y timestamp.
+
+Consecuencia:
+
+V0.11 no concede autoridad global, no cambia Router COST-FIRST, no ejecuta provider calls adicionales, no introduce fallback automatico, retries, dashboard, ranking opaco ni aprendizaje automatico. La politica solo define las condiciones bajo las cuales una implementacion futura podria permitir influencia shadow limitada y reversible.
+
+## Decision 028: V0.11 Cierra Limited Shadow Authority Policy Con Dry-Run Verificable
+
+Estado: aceptada.
+
+Decision:
+
+V0.11 queda cerrada despues de implementar y validar por dry-run la Limited Shadow Authority Policy.
+
+Razon:
+
+La politica ya puede permitir una sustitucion limitada de COST-FIRST por una recomendacion shadow solo cuando existe evidencia suficiente, data quality completa, allowlist exacta, metricas historicas comparables, pricing verificable para la llamada actual y presupuestos configurados. Ante cualquier dato incompleto, bloqueo, pricing no comparable o presupuesto inseguro, la politica hace fail-closed y vuelve a `advisorAuthority = "none"`.
+
+Evidencia validada:
+
+- Intervencion permitida con `advisorAuthority = "limited"`.
+- Seleccion efectiva = shadow solo cuando todos los umbrales pasan.
+- `advisorAuthority = "none"` mantiene COST-FIRST.
+- `evidenceStatus != "sufficient"` fuerza fail-closed.
+- `dataQuality != "complete"` fuerza fail-closed.
+- Shadow fuera de allowlist fuerza fail-closed.
+- Provider/model bloqueado fuerza fail-closed.
+- Pricing faltante o no comparable fuerza fail-closed.
+- `evaluationPassRate < 0.8` fuerza fail-closed.
+- `successRate < 0.8` fuerza fail-closed.
+- Mejora insuficiente fuerza fail-closed.
+- Costo mayor a 1.25x fuerza fail-closed.
+- Delta mayor a `maxAdditionalCostUsdPerIntervention` fuerza fail-closed.
+- `shadowEstimatedCostUsd > maxEstimatedCostUsdPerIntervention` fuerza fail-closed.
+- Budgets obligatorios faltantes fuerzan fail-closed.
+- Rollback deja `advisorAuthority = "none"` y seleccion efectiva COST-FIRST.
+- `auditRecord` completo en permitido y bloqueado.
+- Router COST-FIRST intacto.
+- Provider calls reales: 0.
+- Tests: 134/134 pass.
+
+Consecuencia:
+
+Quantico AI OS tiene una politica deterministica y auditable para autoridad shadow limitada, pero sigue sin autoridad global, sin fallback automatico, sin retries, sin dashboard, sin aprendizaje automatico y sin cambios al ProviderAdapter. COST-FIRST permanece como fallback seguro.
