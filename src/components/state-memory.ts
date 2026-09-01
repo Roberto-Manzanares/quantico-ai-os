@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import type {
   AuthorityDecisionAuditLogEntry,
   BudgetLedgerEntry,
+  ControlledExecutionRunManifestEvent,
   Execution,
   ExecutionEvent,
   PendingApprovalStep,
@@ -24,6 +25,8 @@ export interface StateMemory {
   listShadowRoutingEvaluations(executionId?: string): Promise<ShadowRoutingEvaluationLogEntry[]>;
   saveAuthorityDecisionAuditEntry(entry: AuthorityDecisionAuditLogEntry): Promise<void>;
   listAuthorityDecisionAuditEntries(executionId?: string): Promise<AuthorityDecisionAuditLogEntry[]>;
+  saveControlledExecutionRunManifestEvent(event: ControlledExecutionRunManifestEvent): Promise<void>;
+  listControlledExecutionRunManifestEvents(runId?: string): Promise<ControlledExecutionRunManifestEvent[]>;
 }
 
 export class InMemoryStateMemory implements StateMemory {
@@ -33,6 +36,7 @@ export class InMemoryStateMemory implements StateMemory {
   private readonly budgetLedgerEntries: BudgetLedgerEntry[] = [];
   private readonly shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[] = [];
   private readonly authorityDecisionAuditEntries: AuthorityDecisionAuditLogEntry[] = [];
+  private readonly controlledExecutionRunManifestEvents: ControlledExecutionRunManifestEvent[] = [];
 
   async saveExecution(execution: Execution): Promise<void> {
     this.executions.set(execution.id, execution);
@@ -117,6 +121,22 @@ export class InMemoryStateMemory implements StateMemory {
 
     return this.authorityDecisionAuditEntries.filter((entry) => entry.executionId === executionId);
   }
+
+  async saveControlledExecutionRunManifestEvent(
+    event: ControlledExecutionRunManifestEvent
+  ): Promise<void> {
+    this.controlledExecutionRunManifestEvents.push(event);
+  }
+
+  async listControlledExecutionRunManifestEvents(
+    runId?: string
+  ): Promise<ControlledExecutionRunManifestEvent[]> {
+    if (!runId) {
+      return [...this.controlledExecutionRunManifestEvents];
+    }
+
+    return this.controlledExecutionRunManifestEvents.filter((event) => event.runId === runId);
+  }
 }
 
 interface StateFileData {
@@ -126,6 +146,7 @@ interface StateFileData {
   budgetLedgerEntries: BudgetLedgerEntry[];
   shadowRoutingEvaluations: ShadowRoutingEvaluationLogEntry[];
   authorityDecisionAuditEntries: AuthorityDecisionAuditLogEntry[];
+  controlledExecutionRunManifestEvents: ControlledExecutionRunManifestEvent[];
 }
 
 export class FileStateMemory implements StateMemory {
@@ -259,6 +280,26 @@ export class FileStateMemory implements StateMemory {
     return state.authorityDecisionAuditEntries.filter((entry) => entry.executionId === executionId);
   }
 
+  async saveControlledExecutionRunManifestEvent(
+    event: ControlledExecutionRunManifestEvent
+  ): Promise<void> {
+    const state = await this.readState();
+    state.controlledExecutionRunManifestEvents.push(event);
+    await this.writeState(state);
+  }
+
+  async listControlledExecutionRunManifestEvents(
+    runId?: string
+  ): Promise<ControlledExecutionRunManifestEvent[]> {
+    const state = await this.readState();
+
+    if (!runId) {
+      return state.controlledExecutionRunManifestEvents;
+    }
+
+    return state.controlledExecutionRunManifestEvents.filter((event) => event.runId === runId);
+  }
+
   private async readState(): Promise<StateFileData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
@@ -271,7 +312,8 @@ export class FileStateMemory implements StateMemory {
           pendingApprovalSteps: [],
           budgetLedgerEntries: [],
           shadowRoutingEvaluations: [],
-          authorityDecisionAuditEntries: []
+          authorityDecisionAuditEntries: [],
+          controlledExecutionRunManifestEvents: []
         };
       }
 
@@ -300,7 +342,8 @@ function normalizeState(state: Partial<StateFileData>): StateFileData {
     pendingApprovalSteps: state.pendingApprovalSteps ?? [],
     budgetLedgerEntries: state.budgetLedgerEntries ?? [],
     shadowRoutingEvaluations: state.shadowRoutingEvaluations ?? [],
-    authorityDecisionAuditEntries: state.authorityDecisionAuditEntries ?? []
+    authorityDecisionAuditEntries: state.authorityDecisionAuditEntries ?? [],
+    controlledExecutionRunManifestEvents: state.controlledExecutionRunManifestEvents ?? []
   };
 }
 

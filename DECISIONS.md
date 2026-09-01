@@ -1951,3 +1951,67 @@ Criterios de aceptacion:
 - Los estados operacionales distinguen validacion, rechazo, dry-run listo, aprobacion pendiente, completado y fallido.
 - Post-auditoria reutiliza V0.16/V0.17.
 - Router COST-FIRST, `advisorAuthority` y ProviderAdapter permanecen intactos.
+
+## Decision 043: V0.19 Abre Controlled Execution Run Manifest
+
+Estado: aceptada.
+
+Decision:
+
+V0.19 se abre como fase documental para definir un `ControlledExecutionRunManifest` persistible por invocacion operacional de `runControlledExecution(profile)`.
+
+Razon:
+
+V0.18 permite ejecutar perfiles controlados, pero un `dry_run` o `profile_rejected` puede terminar antes de que el Kernel cree una Execution. Sin un `runId` propio, esos intentos no tienen identidad operacional estable para idempotencia, auditoria y soporte. V0.19 agrega esa identidad sin crear una nueva capa de observabilidad y sin duplicar Timeline V0.16, Audit Index V0.17, Budget Ledger ni Authority Audit.
+
+Capacidad operacional nueva:
+
+`runId` permite correlacionar una invocacion de `runControlledExecution(profile)` aunque no exista `executionId`. Esto habilita auditoria de intentos pre-Kernel, idempotencia por invocacion, soporte de errores pre-provider y trazabilidad de `dry_run` sin crear executions ficticias.
+
+Contrato definido:
+
+- `runId` propio e independiente de `executionId`.
+- `executionId` solo se enlaza cuando el Kernel realmente crea una Execution.
+- `mode`: `dry_run` o `live`.
+- `profileFingerprint` y snapshot sanitizado.
+- `profileValidationStatus`.
+- `runStatus`: `run_created`, `profile_rejected`, `dry_run_ready`, `live_pending_approval`, `live_completed` o `live_failed`.
+- `controlledStatus` devuelto por V0.18.
+- Timestamps de creacion y actualizacion.
+- Referencias auditables a Timeline V0.16, Audit Summary V0.17, Budget Ledger y Authority Audit cuando existan.
+- Provider/model, costos, evaluation status y dataQuality solo cuando existan como evidencia.
+- `recordingStatus`: `manifest_recorded` o `manifest_record_failed`.
+
+El manifest debe ser append-only e idempotente por `runId`. Reusar el mismo `runId` con el mismo `profileFingerprint` no debe crear registros contradictorios. Reusar el mismo `runId` con otro fingerprint debe fallar cerrado como conflicto de idempotencia.
+
+El manifest debe sanitizar goal, constraints y errores. No debe persistir prompts completos, API keys, workspace IDs, credenciales, headers de autenticacion ni respuestas completas del provider.
+
+Lifecycle operacional:
+
+- `run_created`: la invocacion tiene `runId`.
+- `profile_rejected`: perfil rechazado antes de provider.
+- `dry_run_ready`: dry-run validado sin provider calls.
+- `live_pending_approval`: Human Approval Gate pauso la ejecucion live.
+- `live_completed`: ejecucion live completada.
+- `live_failed`: ejecucion live fallida.
+
+Persistence outcomes:
+
+- `manifest_recorded`: manifest persistido correctamente.
+- `manifest_record_failed`: fallo al persistir manifest.
+
+Consecuencia:
+
+V0.19 no cambia Execution del Kernel y no crea executions ficticias para `dry_run` o `profile_rejected`. No cambia Router COST-FIRST, `advisorAuthority`, Human Approval Gate ni ProviderAdapter. No agrega autoridad, routing, fallback, retries, provider behavior, dashboard ni nueva DB.
+
+Criterios de aceptacion:
+
+- Toda invocacion de `runControlledExecution(profile)` tiene `runId`.
+- `dry_run`, `live` y `profile_rejected` producen manifest operacional.
+- `executionId` se enlaza solo cuando el Kernel crea Execution real.
+- `profile_rejected` y `dry_run_ready` quedan auditables sin crear Execution ficticia.
+- El manifest referencia Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit cuando existan, sin duplicar sus datos ni logicas.
+- El manifest es append-only e idempotente por `runId`.
+- Conflicto de `runId` con fingerprint distinto falla cerrado.
+- No se persisten prompts completos, secretos ni credenciales.
+- Router COST-FIRST, `advisorAuthority`, Human Approval Gate, ProviderAdapter y provider behavior permanecen intactos.

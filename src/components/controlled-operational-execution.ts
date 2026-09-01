@@ -1,7 +1,14 @@
+import { createHash, randomUUID } from "node:crypto";
 import type {
   ControlledExecutionAuditRequirements,
+  ControlledExecutionManifestRecordingStatus,
   ControlledExecutionProfile,
   ControlledExecutionResult,
+  ControlledExecutionRunLifecycleStatus,
+  ControlledExecutionRunManifestEvent,
+  ControlledExecutionRunManifestProfileSnapshot,
+  ControlledExecutionRunManifestReferences,
+  ControlledExecutionRunManifestSnapshot,
   EvaluationCriterion,
   ExecutionConstraints,
   ExecutionStatus
@@ -30,20 +37,85 @@ export class ControlledOperationalExecutionV018 {
   async runControlledExecution(
     profile: ControlledExecutionProfile
   ): Promise<ControlledExecutionResult> {
+    const runId = profile.runId ?? createRunId();
+    const profileSnapshot = createProfileSnapshot(profile);
+    const existingEvents = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(runId);
+    const idempotencyResult = await this.resolveIdempotency({
+      runId,
+      profile,
+      profileSnapshot,
+      existingEvents
+    });
+
+    if (idempotencyResult) {
+      return idempotencyResult;
+    }
+
+    const runCreated = await this.recordManifestEvent({
+      runId,
+      lifecycleStatus: "run_created",
+      profileSnapshot,
+      reason: "Controlled execution run invocation received."
+    });
+
+    if (runCreated.status === "manifest_record_failed") {
+      return manifestFailedResult(runId, profile, runCreated.reason);
+    }
+
     const profileError = validateProfile(profile);
 
     if (profileError) {
-      return rejected(profile, profileError);
+      const result = rejected(runId, profile, profileError);
+      return this.recordTransition(profileSnapshot, result, "profile_rejected");
     }
 
     if (profile.mode === "dry_run") {
-      return this.runDryRun(profile);
+      const result = await this.runDryRun(runId, profile);
+      return this.recordTransition(profileSnapshot, result, dryRunLifecycleStatus(result.status));
     }
 
-    return this.runLive(profile);
+    const result = await this.runLive(runId, profile);
+    return this.recordTransition(profileSnapshot, result, liveLifecycleStatus(result.status));
   }
 
-  private async runDryRun(profile: ControlledExecutionProfile): Promise<ControlledExecutionResult> {
+  private async resolveIdempotency(input: {
+    runId: string;
+    profile: ControlledExecutionProfile;
+    profileSnapshot: ControlledExecutionRunManifestProfileSnapshot;
+    existingEvents: ControlledExecutionRunManifestEvent[];
+  }): Promise<ControlledExecutionResult | undefined> {
+    if (input.existingEvents.length === 0) {
+      return undefined;
+    }
+
+    const firstEvent = input.existingEvents[0];
+
+    if (firstEvent?.profileFingerprint !== input.profileSnapshot.profileFingerprint) {
+      const result = rejected(
+        input.runId,
+        input.profile,
+        "RunId conflict: existing controlled execution run has a different profileFingerprint."
+      );
+      return this.recordTransition(input.profileSnapshot, result, "profile_rejected");
+    }
+
+    const latest = latestManifestSnapshot(input.existingEvents);
+
+    if (!latest) {
+      return manifestFailedResult(
+        input.runId,
+        input.profile,
+        "Controlled execution run has existing manifest events but no derivable snapshot."
+      );
+    }
+
+    return resultFromManifest(input.profile, latest);
+  }
+
+  private async runDryRun(
+    runId: string,
+    profile: ControlledExecutionProfile
+  ): Promise<ControlledExecutionResult> {
     const constraints = profileConstraints(profile);
     const taskType = determineTaskType(profile.goal);
     const context = await this.dependencies.contextCompiler.compile({
@@ -72,12 +144,13 @@ export class ControlledOperationalExecutionV018 {
     });
 
     if (tokenDecision.status === "reject") {
-      return rejected(profile, `Profile rejected before provider call: ${tokenDecision.reason}`);
+      return rejected(runId, profile, `Profile rejected before provider call: ${tokenDecision.reason}`);
     }
 
     return {
       status: "dry_run_ready",
       profileValidationStatus: "profile_validated",
+      runId,
       profileId: profile.profileId,
       provider: routingDecision.provider,
       model: routingDecision.model,
@@ -97,7 +170,10 @@ export class ControlledOperationalExecutionV018 {
     };
   }
 
-  private async runLive(profile: ControlledExecutionProfile): Promise<ControlledExecutionResult> {
+  private async runLive(
+    runId: string,
+    profile: ControlledExecutionProfile
+  ): Promise<ControlledExecutionResult> {
     const result = await this.dependencies.orchestrator.run({
       goal: profile.goal,
       projectId: profile.projectId,
@@ -114,6 +190,7 @@ export class ControlledOperationalExecutionV018 {
     return {
       status: liveStatus(result.execution.status),
       profileValidationStatus: "profile_validated",
+      runId,
       profileId: profile.profileId,
       executionId: result.execution.id,
       provider: providerLedgerEntry?.provider,
@@ -123,6 +200,117 @@ export class ControlledOperationalExecutionV018 {
       evaluationStatus: result.evaluation.status,
       postAudit,
       reason: `Live execution finished with execution status ${result.execution.status}.`
+    };
+  }
+
+  private async recordTransition(
+    profileSnapshot: ControlledExecutionRunManifestProfileSnapshot,
+    result: ControlledExecutionResult,
+    lifecycleStatus: ControlledExecutionRunLifecycleStatus
+  ): Promise<ControlledExecutionResult> {
+    const recorded = await this.recordManifestEvent({
+      runId: result.runId ?? createRunId(),
+      lifecycleStatus,
+      profileSnapshot,
+      result,
+      reason: result.reason
+    });
+
+    if (recorded.status === "manifest_record_failed") {
+      return {
+        ...result,
+        manifestRecordingStatus: "manifest_record_failed",
+        manifest: recorded.snapshot,
+        reason: `${result.reason} Manifest recording failed: ${recorded.reason}`
+      };
+    }
+
+    return {
+      ...result,
+      manifestRecordingStatus: "manifest_recorded",
+      manifest: recorded.snapshot
+    };
+  }
+
+  private async recordManifestEvent(input: {
+    runId: string;
+    lifecycleStatus: ControlledExecutionRunLifecycleStatus;
+    profileSnapshot: ControlledExecutionRunManifestProfileSnapshot;
+    result?: ControlledExecutionResult;
+    reason: string;
+  }): Promise<{
+    status: ControlledExecutionManifestRecordingStatus;
+    reason: string;
+    snapshot?: ControlledExecutionRunManifestSnapshot;
+  }> {
+    try {
+      const existingEvents = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(input.runId);
+      const event: ControlledExecutionRunManifestEvent = {
+        id: `run_manifest_${input.runId}_${existingEvents.length}`,
+        runId: input.runId,
+        sequence: existingEvents.length,
+        lifecycleStatus: input.lifecycleStatus,
+        profileFingerprint: input.profileSnapshot.profileFingerprint,
+        profileSnapshot: input.profileSnapshot,
+        controlledStatus: input.result?.status,
+        profileValidationStatus: input.result?.profileValidationStatus,
+        executionId: input.result?.executionId,
+        provider: input.result?.provider,
+        model: input.result?.model,
+        estimatedCostUsd: input.result?.estimatedCostUsd,
+        actualCostUsd: input.result?.actualCostUsd,
+        evaluationStatus: input.result?.evaluationStatus,
+        references: await this.referencesFor(input.result),
+        reason: sanitizeText(input.reason),
+        createdAt: new Date()
+      };
+
+      await this.dependencies.stateMemory.saveControlledExecutionRunManifestEvent(event);
+      const events = [...existingEvents, event];
+
+      return {
+        status: "manifest_recorded",
+        reason: "Controlled execution run manifest event recorded.",
+        snapshot: latestManifestSnapshot(events)
+      };
+    } catch (error) {
+      return {
+        status: "manifest_record_failed",
+        reason: error instanceof Error ? error.message : "Unknown manifest persistence error."
+      };
+    }
+  }
+
+  private async referencesFor(
+    result: ControlledExecutionResult | undefined
+  ): Promise<ControlledExecutionRunManifestReferences> {
+    if (!result?.executionId) {
+      return {};
+    }
+
+    const [timeline, summary, ledgerEntries, authorityEntries] = await Promise.all([
+      this.dependencies.executionAuditTimeline.getExecutionAuditTimeline(result.executionId),
+      this.dependencies.executionAuditIndex.getExecutionAuditSummary(result.executionId),
+      this.dependencies.stateMemory.listBudgetLedgerEntries(result.executionId),
+      this.dependencies.stateMemory.listAuthorityDecisionAuditEntries(result.executionId)
+    ]);
+
+    return {
+      executionId: result.executionId,
+      timeline: {
+        status: timeline.status,
+        dataQuality: timeline.status === "found" ? timeline.dataQuality : undefined
+      },
+      auditSummary: {
+        status: summary.status,
+        requiresAttention: summary.status === "found" ? summary.summary.requiresAttention : undefined
+      },
+      budgetLedger: {
+        entryCount: ledgerEntries.length
+      },
+      authorityAudit: {
+        entryCount: authorityEntries.length
+      }
     };
   }
 
@@ -231,14 +419,31 @@ function profileConstraints(profile: ControlledExecutionProfile): ExecutionConst
 }
 
 function rejected(
+  runId: string,
   profile: Partial<ControlledExecutionProfile>,
   reason: string
 ): ControlledExecutionResult {
   return {
     status: "profile_rejected",
     profileValidationStatus: "profile_rejected",
+    runId,
     profileId: profile.profileId,
     reason
+  };
+}
+
+function manifestFailedResult(
+  runId: string,
+  profile: Partial<ControlledExecutionProfile>,
+  reason: string
+): ControlledExecutionResult {
+  return {
+    status: "profile_rejected",
+    profileValidationStatus: "profile_rejected",
+    runId,
+    profileId: profile.profileId,
+    reason: `Manifest recording failed before provider call: ${reason}`,
+    manifestRecordingStatus: "manifest_record_failed"
   };
 }
 
@@ -248,6 +453,136 @@ function liveStatus(status: ExecutionStatus): ControlledExecutionResult["status"
   }
 
   if (status === "succeeded") {
+    return "execution_completed";
+  }
+
+  return "execution_failed";
+}
+
+function liveLifecycleStatus(
+  status: ControlledExecutionResult["status"]
+): ControlledExecutionRunLifecycleStatus {
+  if (status === "execution_pending_approval") {
+    return "live_pending_approval";
+  }
+
+  if (status === "execution_completed") {
+    return "live_completed";
+  }
+
+  if (status === "dry_run_ready" || status === "profile_rejected") {
+    return status;
+  }
+
+  return "live_failed";
+}
+
+function dryRunLifecycleStatus(
+  status: ControlledExecutionResult["status"]
+): ControlledExecutionRunLifecycleStatus {
+  return status === "dry_run_ready" ? "dry_run_ready" : "profile_rejected";
+}
+
+function createRunId(): string {
+  return `run_${randomUUID()}`;
+}
+
+function createProfileSnapshot(
+  profile: ControlledExecutionProfile
+): ControlledExecutionRunManifestProfileSnapshot {
+  const constraints = profile.constraints ?? {};
+  const normalizedProfile = {
+    profileId: profile.profileId,
+    mode: profile.mode,
+    projectId: profile.projectId,
+    goal: profile.goal,
+    constraints,
+    evaluationCriteria: profile.evaluationCriteria,
+    approvalPolicy: profile.approvalPolicy,
+    budgets: profile.budgets,
+    auditRequirements: profile.auditRequirements,
+    contextRefs: profile.contextRefs
+  };
+
+  return {
+    profileId: profile.profileId,
+    mode: profile.mode,
+    profileFingerprint: digest(stableStringify(normalizedProfile)),
+    goalDigest: digest(profile.goal ?? ""),
+    goalLength: typeof profile.goal === "string" ? profile.goal.length : 0,
+    constraintsDigest: digest(stableStringify(constraints)),
+    constraintKeys: Object.keys(constraints).sort().map(sanitizeText),
+    evaluationCriteriaSummary: (profile.evaluationCriteria ?? []).map((criterion) => ({
+      type: criterion.type,
+      descriptionPresent: Boolean("description" in criterion && criterion.description)
+    })),
+    approvalPolicySummary: {
+      mediumRiskRequiresApproval: profile.approvalPolicy?.mediumRiskRequiresApproval,
+      maxAutomaticCostUsd: profile.approvalPolicy?.maxAutomaticCostUsd
+    },
+    budgetsSummary: { ...(profile.budgets ?? {}) },
+    auditRequirementsSummary: { ...(profile.auditRequirements ?? {}) }
+  };
+}
+
+function latestManifestSnapshot(
+  events: ControlledExecutionRunManifestEvent[]
+): ControlledExecutionRunManifestSnapshot | undefined {
+  const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
+  const latestEvent = ordered.at(-1);
+
+  if (!latestEvent) {
+    return undefined;
+  }
+
+  return {
+    runId: latestEvent.runId,
+    profileFingerprint: latestEvent.profileFingerprint,
+    latestLifecycleStatus: latestEvent.lifecycleStatus,
+    recordingStatus: "manifest_recorded",
+    events: ordered,
+    latestEvent
+  };
+}
+
+function resultFromManifest(
+  profile: ControlledExecutionProfile,
+  snapshot: ControlledExecutionRunManifestSnapshot
+): ControlledExecutionResult {
+  const event = snapshot.latestEvent;
+  const status = event.controlledStatus ?? controlledStatusFromLifecycle(event.lifecycleStatus);
+
+  return {
+    status,
+    profileValidationStatus:
+      event.profileValidationStatus ??
+      (status === "profile_rejected" ? "profile_rejected" : "profile_validated"),
+    runId: snapshot.runId,
+    profileId: profile.profileId,
+    executionId: event.executionId,
+    provider: event.provider,
+    model: event.model,
+    estimatedCostUsd: event.estimatedCostUsd,
+    actualCostUsd: event.actualCostUsd,
+    evaluationStatus: event.evaluationStatus,
+    reason: `Idempotent controlled execution run replayed from manifest lifecycle ${event.lifecycleStatus}.`,
+    manifestRecordingStatus: "manifest_recorded",
+    manifest: snapshot
+  };
+}
+
+function controlledStatusFromLifecycle(
+  lifecycleStatus: ControlledExecutionRunLifecycleStatus
+): ControlledExecutionResult["status"] {
+  if (lifecycleStatus === "dry_run_ready" || lifecycleStatus === "profile_rejected") {
+    return lifecycleStatus;
+  }
+
+  if (lifecycleStatus === "live_pending_approval") {
+    return "execution_pending_approval";
+  }
+
+  if (lifecycleStatus === "live_completed") {
     return "execution_completed";
   }
 
@@ -271,4 +606,30 @@ function postAuditReason(
   return parts.length > 0
     ? `Post-audit completed using ${parts.join(", ")}.`
     : "Post-audit was not requested by profile auditRequirements.";
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function sanitizeText(value: string): string {
+  return value.replace(/api[_-]?key|token|secret|workspace[_-]?id|authorization/gi, "[redacted]");
 }

@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import {
   createQuanticoApi,
   createQuanticoSystem,
+  ControlledOperationalExecutionV018,
+  FileStateMemory,
   type ControlledExecutionProfile,
+  type ControlledExecutionRunManifestEvent,
   type ModelCallRequest,
   type ModelCallResult,
   type ModelConfig,
@@ -65,10 +68,22 @@ test("V0.18 dry_run validates profile and estimates eligibility without provider
 
     assert.equal(result.status, "dry_run_ready");
     assert.equal(result.profileValidationStatus, "profile_validated");
+    assert.ok(result.runId);
+    assert.notEqual(result.runId, result.executionId);
     assert.equal(result.provider, "openai");
     assert.equal(result.model, "v018-openai-cheap");
     assert.equal(openai.calls.length, 0);
     assert.equal((await system.stateMemory.listExecutions()).length, 0);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+    assert.equal(result.manifestRecordingStatus, "manifest_recorded");
+    assert.equal(manifestEvents.length, 2);
+    assert.deepEqual(
+      manifestEvents.map((event) => event.lifecycleStatus),
+      ["run_created", "dry_run_ready"]
+    );
+    assert.equal(manifestEvents[1]?.executionId, undefined);
     assert.ok(result.dryRun);
     assert.equal(result.dryRun?.taskType, "general");
     assert.equal(typeof result.dryRun?.estimatedCostUsd, "number");
@@ -100,6 +115,13 @@ test("V0.18 dry_run rejects invalid deterministic criteria before provider", asy
     assert.match(result.reason, /not deterministically verifiable/);
     assert.equal(openai.calls.length, 0);
     assert.equal((await system.stateMemory.listExecutions()).length, 0);
+    assert.ok(result.runId);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+    assert.equal(manifestEvents.length, 2);
+    assert.equal(manifestEvents[1]?.lifecycleStatus, "profile_rejected");
+    assert.equal(manifestEvents[1]?.executionId, undefined);
   } finally {
     await cleanup();
   }
@@ -129,6 +151,7 @@ test("V0.18 live rejects missing verifiable budget before provider", async () =>
 
     assert.equal(result.status, "profile_rejected");
     assert.match(result.reason, /verifiable maxCostUsd/);
+    assert.equal(result.manifestRecordingStatus, "manifest_recorded");
     assert.equal(openai.calls.length, 0);
     assert.equal((await system.stateMemory.listExecutions()).length, 0);
   } finally {
@@ -153,6 +176,9 @@ test("V0.18 live delegates one execution to Kernel and returns post-audit", asyn
 
     assert.equal(result.status, "execution_completed");
     assert.equal(result.evaluationStatus, "pass");
+    assert.ok(result.runId);
+    assert.ok(result.executionId);
+    assert.notEqual(result.runId, result.executionId);
     assert.equal(openai.calls.length, 1);
     assert.equal(result.provider, "openai");
     assert.equal(result.model, "v018-openai-cheap");
@@ -161,6 +187,15 @@ test("V0.18 live delegates one execution to Kernel and returns post-audit", asyn
     assert.equal(result.postAudit?.timelineDataQuality, "complete");
     assert.equal((await system.stateMemory.listExecutions()).length, 1);
     assert.equal((await system.stateMemory.listBudgetLedgerEntries(result.executionId)).length, 1);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+    assert.equal(manifestEvents.length, 2);
+    assert.equal(manifestEvents[1]?.lifecycleStatus, "live_completed");
+    assert.equal(manifestEvents[1]?.executionId, result.executionId);
+    assert.equal(manifestEvents[1]?.references.timeline?.status, "found");
+    assert.equal(manifestEvents[1]?.references.auditSummary?.status, "found");
+    assert.equal(manifestEvents[1]?.references.budgetLedger?.entryCount, 1);
   } finally {
     await cleanup();
   }
@@ -191,6 +226,11 @@ test("V0.18 live preserves Human Approval Gate and pauses before provider", asyn
     assert.equal(openai.calls.length, 0);
     assert.ok(result.executionId);
     assert.ok(await system.stateMemory.getPendingApprovalStep(result.executionId));
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+    assert.equal(manifestEvents.length, 2);
+    assert.equal(manifestEvents[1]?.lifecycleStatus, "live_pending_approval");
     assert.equal(result.postAudit?.auditSummaryStatus, "found");
     assert.equal(result.postAudit?.requiresAttention, true);
   } finally {
@@ -207,6 +247,259 @@ test("V0.18 API exposes runControlledExecution", async () => {
 
     assert.equal(result.status, "dry_run_ready");
     assert.equal(result.profileValidationStatus, "profile_validated");
+    assert.ok(result.runId);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 reusing the same runId and profileFingerprint is idempotent", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const controlledProfile = profile({ mode: "live", runId: "run_v019_idempotent" });
+
+  try {
+    const first = await system.controlledOperationalExecution.runControlledExecution(
+      controlledProfile
+    );
+    const second = await system.controlledOperationalExecution.runControlledExecution(
+      controlledProfile
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      "run_v019_idempotent"
+    );
+
+    assert.equal(first.status, "execution_completed");
+    assert.equal(second.status, "execution_completed");
+    assert.equal(first.executionId, second.executionId);
+    assert.equal(openai.calls.length, 1);
+    assert.equal(manifestEvents.length, 2);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 runId conflict with a different profileFingerprint fails closed", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const first = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "dry_run", runId: "run_v019_conflict" })
+    );
+    const conflict = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "dry_run",
+        runId: "run_v019_conflict",
+        goal: "Return different safe text"
+      })
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      "run_v019_conflict"
+    );
+
+    assert.equal(first.status, "dry_run_ready");
+    assert.equal(conflict.status, "profile_rejected");
+    assert.match(conflict.reason, /RunId conflict/);
+    assert.equal(openai.calls.length, 0);
+    assert.equal(manifestEvents.length, 3);
+    assert.equal(manifestEvents[2]?.lifecycleStatus, "profile_rejected");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 manifest history is append-only and persists through FileStateMemory", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai: new FakeProvider("QUANTICO_V018_OK") }
+  });
+
+  try {
+    const result = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "dry_run", runId: "run_v019_persisted" })
+    );
+    const reloadedMemory = new FileStateMemory(stateFilePath);
+    const manifestEvents = await reloadedMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+
+    assert.equal(manifestEvents.length, 2);
+    assert.deepEqual(
+      manifestEvents.map((event) => event.sequence),
+      [0, 1]
+    );
+    assert.deepEqual(
+      manifestEvents.map((event) => event.lifecycleStatus),
+      ["run_created", "dry_run_ready"]
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 pre-provider manifest persistence failure stops before provider", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const failingMemory = new FailingManifestStateMemory(stateFilePath, "always");
+  const controlled = new ControlledOperationalExecutionV018({
+    stateMemory: failingMemory,
+    contextCompiler: system.contextCompiler,
+    modelRouter: system.modelRouter,
+    tokenGovernor: system.tokenGovernor,
+    orchestrator: system.orchestrator,
+    executionAuditTimeline: system.executionAuditTimeline,
+    executionAuditIndex: system.executionAuditIndex
+  });
+
+  try {
+    const result = await controlled.runControlledExecution(
+      profile({ mode: "live", runId: "run_v019_pre_provider_failure" })
+    );
+
+    assert.equal(result.status, "profile_rejected");
+    assert.equal(result.manifestRecordingStatus, "manifest_record_failed");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 post-provider manifest failure does not retry provider call", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const failingMemory = new FailingManifestStateMemory(stateFilePath, "after-run-created");
+  const controlled = new ControlledOperationalExecutionV018({
+    stateMemory: failingMemory,
+    contextCompiler: system.contextCompiler,
+    modelRouter: system.modelRouter,
+    tokenGovernor: system.tokenGovernor,
+    orchestrator: system.orchestrator,
+    executionAuditTimeline: system.executionAuditTimeline,
+    executionAuditIndex: system.executionAuditIndex
+  });
+
+  try {
+    const result = await controlled.runControlledExecution(
+      profile({ mode: "live", runId: "run_v019_post_provider_failure" })
+    );
+
+    assert.equal(result.status, "execution_completed");
+    assert.equal(result.manifestRecordingStatus, "manifest_record_failed");
+    assert.equal(openai.calls.length, 1);
+    assert.equal((await system.stateMemory.listExecutions()).length, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 approval resume keeps runId, executionId, and effectiveSelection without rerun", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called before approval");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const controlledProfile = profile({
+    mode: "live",
+    runId: "run_v019_approval_resume",
+    constraints: {
+      modelCallRiskLevel: "HIGH"
+    }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      controlledProfile
+    );
+    assert.ok(pending.executionId);
+    const pendingStep = await system.stateMemory.getPendingApprovalStep(pending.executionId);
+    const effectiveSelection = pendingStep?.metadata["effectiveSelection"];
+
+    await system.humanApprovalGate.approvePendingStep(
+      { executionId: pending.executionId ?? "", reason: "approved for V0.19 dry-run test" },
+      system.stateMemory
+    );
+    const replay = await system.controlledOperationalExecution.runControlledExecution(
+      controlledProfile
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      "run_v019_approval_resume"
+    );
+
+    assert.equal(pending.status, "execution_pending_approval");
+    assert.equal(replay.status, "execution_pending_approval");
+    assert.equal(replay.runId, pending.runId);
+    assert.equal(replay.executionId, pending.executionId);
+    assert.deepEqual(effectiveSelection, pendingStep?.metadata["effectiveSelection"]);
+    assert.equal(openai.calls.length, 0);
+    assert.equal(manifestEvents.length, 2);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.19 manifest sanitizes profile data and does not persist prompts or secrets", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai: new FakeProvider("QUANTICO_V018_OK") }
+  });
+
+  try {
+    const result = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "dry_run",
+        runId: "run_v019_sanitize",
+        goal: "Return QUANTICO_V018_OK without leaking sk-secret-value",
+        constraints: {
+          ...profile().constraints,
+          // @ts-expect-error deliberately verifies unknown sensitive fields are not persisted as values
+          apiKey: "sk-secret-value"
+        }
+      })
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      result.runId
+    );
+    const serialized = JSON.stringify(manifestEvents);
+
+    assert.equal(result.status, "dry_run_ready");
+    assert.doesNotMatch(serialized, /sk-secret-value/);
+    assert.doesNotMatch(serialized, /Return QUANTICO_V018_OK without leaking/);
+    assert.match(serialized, /goalDigest/);
+    assert.match(serialized, /\[redacted\]/);
   } finally {
     await cleanup();
   }
@@ -267,6 +560,29 @@ class FakeProvider implements ProviderAdapter {
       estimatedCostUsd: null,
       latencyMs: 15
     };
+  }
+}
+
+class FailingManifestStateMemory extends FileStateMemory {
+  private saveAttempts = 0;
+
+  constructor(
+    filePath: string,
+    private readonly mode: "always" | "after-run-created"
+  ) {
+    super(filePath);
+  }
+
+  override async saveControlledExecutionRunManifestEvent(
+    event: ControlledExecutionRunManifestEvent
+  ): Promise<void> {
+    this.saveAttempts += 1;
+
+    if (this.mode === "always" || this.saveAttempts > 1) {
+      throw new Error("manifest persistence unavailable");
+    }
+
+    await super.saveControlledExecutionRunManifestEvent(event);
   }
 }
 

@@ -709,6 +709,7 @@ export interface ControlledExecutionAuditRequirements {
 }
 
 export interface ControlledExecutionProfile {
+  runId?: string;
   profileId?: string;
   goal: string;
   projectId?: string;
@@ -744,6 +745,7 @@ export interface ControlledExecutionPostAudit {
 export interface ControlledExecutionResult {
   status: ControlledExecutionStatus;
   profileValidationStatus: "profile_validated" | "profile_rejected";
+  runId?: string;
   profileId?: string;
   executionId?: string;
   provider?: ProviderName;
@@ -754,6 +756,84 @@ export interface ControlledExecutionResult {
   dryRun?: ControlledExecutionDryRun;
   postAudit?: ControlledExecutionPostAudit;
   reason: string;
+  manifestRecordingStatus?: ControlledExecutionManifestRecordingStatus;
+  manifest?: ControlledExecutionRunManifestSnapshot;
+}
+
+export type ControlledExecutionRunLifecycleStatus =
+  | "run_created"
+  | "profile_rejected"
+  | "dry_run_ready"
+  | "live_pending_approval"
+  | "live_completed"
+  | "live_failed";
+
+export type ControlledExecutionManifestRecordingStatus =
+  | "manifest_recorded"
+  | "manifest_record_failed";
+
+export interface ControlledExecutionRunManifestProfileSnapshot {
+  profileId?: string;
+  mode: ControlledExecutionMode;
+  profileFingerprint: string;
+  goalDigest: string;
+  goalLength: number;
+  constraintsDigest: string;
+  constraintKeys: string[];
+  evaluationCriteriaSummary: Array<{ type: EvaluationCriterion["type"]; descriptionPresent: boolean }>;
+  approvalPolicySummary: {
+    mediumRiskRequiresApproval?: boolean;
+    maxAutomaticCostUsd?: number;
+  };
+  budgetsSummary: ControlledExecutionBudgets;
+  auditRequirementsSummary: ControlledExecutionAuditRequirements;
+}
+
+export interface ControlledExecutionRunManifestReferences {
+  executionId?: string;
+  timeline?: {
+    status: ExecutionAuditTimelineReadResult["status"];
+    dataQuality?: ExecutionAuditTimelineDataQuality;
+  };
+  auditSummary?: {
+    status: ExecutionAuditSummaryReadResult["status"];
+    requiresAttention?: boolean;
+  };
+  budgetLedger?: {
+    entryCount: number;
+  };
+  authorityAudit?: {
+    entryCount: number;
+  };
+}
+
+export interface ControlledExecutionRunManifestEvent {
+  id: string;
+  runId: string;
+  sequence: number;
+  lifecycleStatus: ControlledExecutionRunLifecycleStatus;
+  profileFingerprint: string;
+  profileSnapshot: ControlledExecutionRunManifestProfileSnapshot;
+  controlledStatus?: ControlledExecutionStatus;
+  profileValidationStatus?: "profile_validated" | "profile_rejected";
+  executionId?: string;
+  provider?: ProviderName;
+  model?: string;
+  estimatedCostUsd?: number | null;
+  actualCostUsd?: number | null;
+  evaluationStatus?: EvaluationStatus;
+  references: ControlledExecutionRunManifestReferences;
+  reason: string;
+  createdAt: Date;
+}
+
+export interface ControlledExecutionRunManifestSnapshot {
+  runId: string;
+  profileFingerprint: string;
+  latestLifecycleStatus: ControlledExecutionRunLifecycleStatus;
+  recordingStatus: ControlledExecutionManifestRecordingStatus;
+  events: ControlledExecutionRunManifestEvent[];
+  latestEvent: ControlledExecutionRunManifestEvent;
 }
 
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";

@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.18 validated.
+Fase: V0.19 opened.
 
-Version objetivo: V0.18.
+Version objetivo: V0.19.
 
-Codigo implementado: si para V0.18.
+Codigo implementado: no para V0.19.
 
-Estado actual: V0.18 implementada y validada por dry-run.
+Estado actual: V0.19 documentalmente abierta.
 
-Ultimo hito: dry-run final validado de V0.18 Controlled Operational Execution Profile.
+Ultimo hito: apertura documental de V0.19 Controlled Execution Run Manifest.
 
 Provider validado V0.1: OpenAI.
 
@@ -235,6 +235,28 @@ Resultados V0.18: `profile_validated`, `profile_rejected`, `dry_run_ready`, `exe
 Limites V0.18: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no crear una segunda autoridad operacional, no agregar fallback ni retries implicitos, no agregar dashboard, no introducir nueva base de datos, no modificar ProviderAdapter, no duplicar metricas V0.14/V0.15, no reimplementar timeline V0.16 ni index V0.17, no permitir live sin presupuesto estricto ni criterios deterministas verificables.
 
 V0.18: implementada y validada por dry-run.
+
+Commit de cierre V0.18: `56b65830f5470e6dd38c77ff232ee9aa0daf7774`.
+
+V0.19: comienza como fase documental separada.
+
+Titulo V0.19: Controlled Execution Run Manifest.
+
+Objetivo V0.19: persistir un manifiesto operacional auditable por cada invocacion de `runControlledExecution(profile)`, identificado por `runId`, incluyendo `dry_run`, `live` y `profile_rejected`, sin duplicar Kernel, Timeline, Audit Index, Budget Ledger ni Authority Audit.
+
+Problema operacional V0.19: V0.18 estandariza como lanzar una ejecucion controlada, pero los intentos operacionales que no crean una Execution del Kernel, como `profile_rejected` o `dry_run_ready`, necesitan identidad operacional, idempotencia y evidencia persistida propia para auditoria y trazabilidad.
+
+Capacidad nueva V0.19: registrar `runId`, modo, fingerprint/snapshot sanitizado del perfil operacional, validacion, estado resultante, timestamps, seleccion estimada o efectiva cuando exista, costos estimados/actuales disponibles, referencias auditables a timeline/audit summary/ledger/authority audit cuando exista `executionId`, y razon auditable del desenlace.
+
+Superficie V0.19: `runControlledExecution(profile)` debe emitir un Controlled Execution Run Manifest append-only e idempotente por `runId` como registro de la invocacion operacional. No es una nueva capa de observabilidad y no define una Read API como objetivo principal.
+
+Lifecycle V0.19: `run_created`, `profile_rejected`, `dry_run_ready`, `live_pending_approval`, `live_completed` y `live_failed`.
+
+Persistence outcomes V0.19: `manifest_recorded` y `manifest_record_failed`. No son estados del lifecycle operacional.
+
+Invariantes V0.19: `executionId` se enlaza solo cuando el Kernel realmente crea una Execution; no se crean executions ficticias para `dry_run` o `profile_rejected`; no provider calls para `dry_run` o `profile_rejected`; maximo una provider call por execution attempt; Human Approval Gate no se salta; Router COST-FIRST, `advisorAuthority`, ProviderAdapter, V0.16 Timeline y V0.17 Audit Index permanecen intactos; el manifest no persiste prompts completos, API keys, workspace IDs ni secretos.
+
+Limites V0.19: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel, Timeline, Audit Index ni metricas existentes, no duplicar Budget Ledger ni Authority Audit, no cambiar Execution del Kernel y no ejecutar provider calls durante la fase documental.
 
 ## Cierre V0.18
 
@@ -680,6 +702,13 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
+- Implementar V0.19 Controlled Execution Run Manifest solo despues de aprobar el contrato documental.
+- Persistir un manifest append-only e idempotente por `runId` por invocacion de `runControlledExecution(profile)`.
+- Registrar `dry_run`, `profile_rejected`, `live_pending_approval`, `live_completed` y `live_failed` sin depender de que exista siempre una Execution del Kernel.
+- Sanitizar el profile snapshot para no persistir prompts completos ni secretos.
+- Referenciar V0.16 timeline, V0.17 audit summary, Budget Ledger y Authority Audit cuando exista `executionId`, sin duplicar sus datos ni logica.
+- No cambiar Execution del Kernel ni crear executions ficticias para `dry_run` o `profile_rejected`.
+- Mantener provider calls = 0 para `dry_run` y rechazos pre-provider.
 - Mantener el reporte read-only y sin autoridad operativa.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
