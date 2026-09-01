@@ -2156,3 +2156,76 @@ Criterios de aceptacion:
 - Maximo una provider call por execution attempt.
 - Repetir el mismo comando no duplica provider calls, Ledger ni Manifest.
 - No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
+## Decision 047: V0.23 Abre Controlled Run Finalization Consistency Gate
+
+Estado: aceptada.
+
+Decision:
+
+V0.23 se abre como fase documental para definir `finalizeControlledRun(runId)`, un gate operacional minimo que declara un Controlled Run finalizado solo cuando la evidencia persistida entre Run Manifest V0.19, Execution, Budget Ledger y Timeline V0.16 es terminal y coherente.
+
+Razon:
+
+V0.22 completa el flujo humano de aprobacion y continuacion en una sola operacion, pero no separa explicitamente el resultado terminal de la finalizacion auditada. El siguiente incremento minimo no debe crear otra API read-only ni duplicar observabilidad; debe cerrar el ciclo operacional validando que las fuentes persistidas no se contradicen antes de marcar el run como finalizado.
+
+Capacidad operacional nueva:
+
+- Verificar cierre coherente por `runId`.
+- Distinguir lifecycle del Manifest y outcome de finalizacion.
+- Detectar contradicciones entre Manifest, Execution, Ledger y Timeline.
+- Registrar, cuando aplique, un marcador append-only de finalizacion compacto y referencial.
+- Evitar que un run con evidencia ambigua o contradictoria sea tratado como cierre limpio.
+
+Contrato definido:
+
+- `finalizeControlledRun(runId)` devuelve `finalized`, `not_found`, `not_finalizable`, `finalization_inconsistent` o `finalization_failed`.
+- `not_found` aplica solo si no existe Manifest V0.19 para `runId`.
+- `not_finalizable` aplica si el run existe pero no tiene estado terminal finalizable.
+- `finalized` exige evidencia persistida coherente entre Manifest, Execution, Ledger y Timeline cuando esas fuentes apliquen.
+- `finalization_inconsistent` reporta contradicciones persistidas sin resolver automaticamente cual fuente es correcta.
+- La finalizacion es un outcome separado del lifecycle del Manifest.
+
+Consecuencia:
+
+V0.23 no concede autoridad nueva y no cambia Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution ni ProviderAdapter. No agrega fallback, retries, dashboard, nueva DB ni nuevos providers. La implementacion futura debe reutilizar Manifest V0.19, Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit sin duplicar datos ni logica.
+
+Criterios de aceptacion:
+
+- Existe contrato documental para `finalizeControlledRun(runId)`.
+- El cierre se basa solo en evidencia persistida.
+- No se crean executions ficticias.
+- No se llama provider.
+- No se reejecutan Router, Authority Policy, Token Governor, Budget Enforcement ni Evaluator.
+- Contradicciones se reportan como `finalization_inconsistent`.
+- Evidencia faltante o ambigua no se interpreta como exito.
+- Cualquier marcador de finalizacion es append-only, compacto y referencial.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
+## Decision 048: V0.23 Implementa Controlled Run Finalization Consistency Gate
+
+Estado: aceptada.
+
+Decision:
+
+V0.23 implementa `finalizeControlledRun(runId)` sobre Controlled Operational Execution para cerrar un run solo cuando Manifest, Execution, Budget Ledger y Timeline V0.16 contienen evidencia terminal coherente.
+
+Razon:
+
+La implementacion mantiene el cierre operacional dentro del flujo controlado existente. No crea una nueva capa read-only, no duplica Timeline, Audit Index, Ledger, Authority Audit ni Manifest, y separa explicitamente el outcome de finalizacion del lifecycle del Manifest.
+
+Resultado validado:
+
+- `finalized` para run completado con evidencia coherente.
+- `not_found` cuando no existe Manifest.
+- `not_finalizable` cuando el run permanece pendiente de aprobacion.
+- `finalization_inconsistent` cuando Manifest y Execution se contradicen.
+- Marcador append-only compacto y referencial para finalizaciones exitosas.
+- Repetir finalizacion no duplica marcador ni provider call.
+- API expone `finalizeControlledRun`.
+- Regresion V0.22 preservada.
+- Tests: 211/211 pass.
+
+Consecuencia:
+
+Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution y ProviderAdapter permanecen intactos. V0.23 no agrega autoridad, fallback, retries, dashboard, nueva DB ni provider calls.

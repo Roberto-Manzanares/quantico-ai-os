@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.22 opened.
+Fase: V0.23 implemented.
 
-Version objetivo: V0.22.
+Version objetivo: V0.23.
 
-Codigo implementado: no para V0.22.
+Codigo implementado: si para V0.23.
 
-Estado actual: V0.22 documentalmente abierta.
+Estado actual: V0.23 implementada y validada.
 
-Ultimo hito: apertura documental de V0.22 Controlled Approval Completion Command.
+Ultimo hito: implementacion de V0.23 Controlled Run Finalization Consistency Gate.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 198/198 pass.
+Tests actuales: 211/211 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -313,6 +313,24 @@ Capacidad nueva V0.22: `completeControlledRunApproval(runId, approvalDecision)` 
 Contrato V0.22: la operacion devuelve `completed`, `rejected`, `not_found`, `not_completable` o `completion_failed`; conserva `runId`, `executionId` y `effectiveSelection`; no crea nueva Execution; no llama Router COST-FIRST ni Authority Policy; no duplica Manifest, Timeline, Audit Index, Budget Ledger ni Authority Audit.
 
 Limites V0.22: no cambiar Router COST-FIRST, Human Approval Gate, `advisorAuthority`, ProviderAdapter ni Kernel; no agregar autoridad, fallback, retries, dashboard, nueva DB ni nuevos providers; no ejecutar provider calls durante la fase documental.
+
+Commit de cierre V0.22: `7786a7fa561a1c4458b47e15ee3e7620ba7704d2`.
+
+Tests de cierre V0.22: 206/206 pass.
+
+V0.23: comienza como fase documental separada.
+
+Titulo V0.23: Controlled Run Finalization Consistency Gate.
+
+Objetivo V0.23: definir un gate operacional minimo para cerrar un Controlled Run solo cuando el estado final persistido sea coherente entre Run Manifest V0.19, Execution, Budget Ledger y Timeline V0.16.
+
+Problema operacional V0.23: V0.22 completa el flujo humano de aprobacion y continuacion, pero aun falta un cierre explicito que distinga resultado terminal de finalizacion auditada y coherente.
+
+Capacidad nueva V0.23: `finalizeControlledRun(runId)` verifica evidencia persistida, devuelve un outcome de finalizacion y, cuando aplique, registra un marcador append-only compacto y referencial sin duplicar Timeline, Audit Index, Ledger, Authority Audit ni Manifest.
+
+Contrato V0.23: la operacion devuelve `finalized`, `not_found`, `not_finalizable`, `finalization_inconsistent` o `finalization_failed`; `finalized` exige evidencia terminal coherente; `finalization_inconsistent` reporta contradicciones sin resolverlas automaticamente; no crea executions ficticias ni llama provider.
+
+Limites V0.23: no cambiar Router COST-FIRST, Human Approval Gate, `advisorAuthority`, ProviderAdapter ni Kernel; no agregar autoridad, fallback, retries, dashboard, nueva DB ni nuevos providers; no reimplementar ni duplicar Manifest, Timeline, Audit Index, Budget Ledger o Authority Audit.
 
 ## Cierre V0.18
 
@@ -758,15 +776,17 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Implementar V0.22 Controlled Approval Completion Command solo despues de aprobar el contrato documental.
-- Exponer `completeControlledRunApproval(runId, approvalDecision)`.
-- Componer explicitamente V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion humana.
-- Conservar `runId`, `executionId` y `effectiveSelection`.
-- No reroutear, no re-evaluar Authority Policy y no crear una nueva Execution.
-- En `approved`, delegar continuacion a V0.21 solo si V0.20 resolvio aprobacion correctamente.
-- En `rejected`, terminar sin provider calls.
-- Mantener idempotencia por `runId` y evitar segunda provider call, Ledger duplicado o Manifest contradictorio.
-- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit, Manifest V0.19, Approval Resolution V0.20 y Continuation V0.21 sin duplicar datos ni logica.
+- Implementar V0.23 Controlled Run Finalization Consistency Gate solo despues de aprobar el contrato documental.
+- Exponer `finalizeControlledRun(runId)`.
+- Usar Run Manifest V0.19 como identidad primaria del cierre.
+- Verificar coherencia entre Manifest, Execution, Budget Ledger y Timeline V0.16 cuando esas fuentes apliquen.
+- Mantener finalization outcome separado del lifecycle del Manifest.
+- Registrar cualquier resultado de finalizacion como marcador append-only, compacto y referencial.
+- Reportar `finalization_inconsistent` cuando existan contradicciones persistidas sin resolver automaticamente la fuente correcta.
+- Devolver `not_finalizable` cuando el run aun no tenga estado terminal finalizable.
+- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit y Manifest V0.19 sin duplicar datos ni logica.
+- No crear executions ficticias para `dry_run`, `profile_rejected` ni runs no finalizables.
+- No llamar provider ni reejecutar Router, Authority Policy, Token Governor, Budget Enforcement o Evaluator durante finalizacion.
 - Mantener el reporte read-only y sin autoridad operativa.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
@@ -855,6 +875,9 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.21 declara contrato de Approved Execution Continuation Primitive para continuar una Execution aprobada conservando `runId`, `executionId` y `effectiveSelection`.
 - V0.21 queda validada con continuacion aprobada, not_found, not_continuable, effectiveSelection persistida, idempotencia, Ledger/Manifest sin duplicados, cero APIs reales y 198/198 tests.
 - V0.22 declara contrato de Controlled Approval Completion Command para componer V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion humana, sin nueva autoridad ni logica duplicada.
+- V0.22 queda cerrada y congelada con Controlled Approval Completion Command, composicion V0.20/V0.21, rechazo sin provider calls, aprobacion con identidad preservada, sin rerouting, sin nueva Authority Policy, sin nueva Execution, sin duplicados en Ledger/Manifest y 206/206 tests.
+- V0.23 declara contrato de Controlled Run Finalization Consistency Gate para cerrar un run solo cuando Manifest, Execution, Ledger y Timeline tengan evidencia terminal coherente, sin duplicar subsistemas ni agregar autoridad.
+- V0.23 queda implementada con `finalizeControlledRun(runId)`, outcome de finalizacion separado del lifecycle, marcador append-only compacto, deteccion de `not_found`, `not_finalizable` e inconsistencias persistidas, cero provider calls, regresion V0.22 y 211/211 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

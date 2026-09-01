@@ -772,6 +772,21 @@ export type ControlledExecutionManifestRecordingStatus =
   | "manifest_recorded"
   | "manifest_record_failed";
 
+export type ControlledRunFinalizationStatus =
+  | "finalized"
+  | "not_found"
+  | "not_finalizable"
+  | "finalization_inconsistent"
+  | "finalization_failed";
+
+export interface ControlledRunFinalizationMarker {
+  status: Exclude<ControlledRunFinalizationStatus, "not_found">;
+  dataQuality?: ExecutionAuditTimelineDataQuality;
+  checkedReferences: ControlledExecutionRunManifestReferences;
+  reason: string;
+  createdAt: Date;
+}
+
 export interface ControlledExecutionRunManifestProfileSnapshot {
   profileId?: string;
   mode: ControlledExecutionMode;
@@ -823,6 +838,7 @@ export interface ControlledExecutionRunManifestEvent {
   actualCostUsd?: number | null;
   evaluationStatus?: EvaluationStatus;
   references: ControlledExecutionRunManifestReferences;
+  finalization?: ControlledRunFinalizationMarker;
   reason: string;
   createdAt: Date;
 }
@@ -990,6 +1006,49 @@ export type ControlledApprovalCompletionResult =
       executionId?: string;
       approvalResolution?: ControlledRunApprovalResolutionResult;
       continuation?: ControlledExecutionContinuationResult;
+      reason: string;
+    };
+
+export type ControlledRunFinalizationResult =
+  | {
+      status: "finalized";
+      runId: string;
+      executionId?: string;
+      lifecycleStatus: ControlledExecutionRunLifecycleStatus;
+      dataQuality: ExecutionAuditTimelineDataQuality;
+      references: ControlledExecutionRunManifestReferences;
+      manifestRecordingStatus?: ControlledExecutionManifestRecordingStatus;
+      manifest?: ControlledExecutionRunManifestSnapshot;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    }
+  | {
+      status: "not_finalizable";
+      runId: string;
+      executionId?: string;
+      lifecycleStatus?: ControlledExecutionRunLifecycleStatus;
+      reason: string;
+    }
+  | {
+      status: "finalization_inconsistent";
+      runId: string;
+      executionId?: string;
+      lifecycleStatus: ControlledExecutionRunLifecycleStatus;
+      dataQuality?: ExecutionAuditTimelineDataQuality;
+      references: ControlledExecutionRunManifestReferences;
+      reason: string;
+    }
+  | {
+      status: "finalization_failed";
+      runId: string;
+      executionId?: string;
+      lifecycleStatus?: ControlledExecutionRunLifecycleStatus;
+      manifestRecordingStatus?: ControlledExecutionManifestRecordingStatus;
+      manifest?: ControlledExecutionRunManifestSnapshot;
       reason: string;
     };
 

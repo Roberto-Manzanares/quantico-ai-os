@@ -1230,6 +1230,176 @@ test("V0.22 API exposes controlled approval completion", async () => {
   }
 });
 
+test("V0.23 finalizes completed controlled run with coherent persisted evidence", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v023_finalized",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await system.controlledOperationalExecution.completeControlledRunApproval(pending.runId ?? "", {
+      decision: "approved",
+      reason: "approved for V0.23 finalization"
+    });
+    const result = await system.controlledOperationalExecution.finalizeControlledRun(
+      pending.runId ?? ""
+    );
+    const replay = await system.controlledOperationalExecution.finalizeControlledRun(
+      pending.runId ?? ""
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+    const finalizationEvents = manifestEvents.filter((event) => event.finalization);
+
+    assert.equal(result.status, "finalized");
+    assert.equal(result.status === "finalized" ? result.runId : undefined, pending.runId);
+    assert.equal(result.status === "finalized" ? result.executionId : undefined, pending.executionId);
+    assert.equal(result.status === "finalized" ? result.lifecycleStatus : undefined, "live_completed");
+    assert.equal(result.status === "finalized" ? result.dataQuality : undefined, "complete");
+    assert.equal(result.status === "finalized" ? result.references.budgetLedger?.entryCount : undefined, 1);
+    assert.equal(replay.status, "finalized");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(finalizationEvents.length, 1);
+    assert.equal(finalizationEvents[0]?.finalization?.status, "finalized");
+    assert.equal(finalizationEvents[0]?.finalization?.checkedReferences.budgetLedger?.entryCount, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.23 finalization returns not_found without provider calls", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const result = await system.controlledOperationalExecution.finalizeControlledRun(
+      "run_v023_missing"
+    );
+
+    assert.equal(result.status, "not_found");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.23 finalization returns not_finalizable for pending approval", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v023_not_finalizable",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.finalizeControlledRun(
+      pending.runId ?? ""
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(result.status, "not_finalizable");
+    assert.equal(
+      result.status === "not_finalizable" ? result.lifecycleStatus : undefined,
+      "live_pending_approval"
+    );
+    assert.equal(openai.calls.length, 0);
+    assert.equal(manifestEvents.some((event) => event.finalization), false);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.23 finalization reports inconsistent persisted evidence without resolving it", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v023_inconsistent",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await system.controlledOperationalExecution.completeControlledRunApproval(pending.runId ?? "", {
+      decision: "approved"
+    });
+    const execution = await system.stateMemory.getExecution(pending.executionId ?? "");
+
+    if (!execution) {
+      throw new Error("Expected execution for V0.23 inconsistent test.");
+    }
+
+    await system.stateMemory.saveExecution({
+      ...execution,
+      status: "failed",
+      updatedAt: new Date(execution.updatedAt.getTime() + 1)
+    });
+
+    const result = await system.controlledOperationalExecution.finalizeControlledRun(
+      pending.runId ?? ""
+    );
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(result.status, "finalization_inconsistent");
+    assert.match(result.reason, /contradicts Execution status failed/);
+    assert.equal(openai.calls.length, 1);
+    assert.equal(manifestEvents.some((event) => event.finalization), false);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.23 API exposes controlled run finalization", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const api = createQuanticoApi({ stateFilePath });
+
+  try {
+    const result = await api.finalizeControlledRun("run_v023_api_missing");
+
+    assert.equal(result.status, "not_found");
+  } finally {
+    await cleanup();
+  }
+});
+
 function profile(
   overrides: Partial<ControlledExecutionProfile> = {}
 ): ControlledExecutionProfile {

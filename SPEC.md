@@ -2600,6 +2600,115 @@ Para `approvalDecision = "approved"`:
 - Router COST-FIRST, Human Approval Gate, `advisorAuthority` y ProviderAdapter permanecen intactos.
 - No hay fallback, retries, nueva autoridad, dashboard ni nueva DB.
 
+## Apertura V0.23
+
+Titulo: V0.23 - Controlled Run Finalization Consistency Gate.
+
+Estado de V0.22: cerrada y congelada.
+
+Commit de cierre V0.22: `7786a7fa561a1c4458b47e15ee3e7620ba7704d2`.
+
+V0.23 comienza como fase documental separada.
+
+### Objetivo V0.23
+
+Definir un gate operacional minimo para cerrar un Controlled Run solo cuando el estado final persistido sea coherente entre Run Manifest V0.19, Execution, Budget Ledger y Timeline V0.16.
+
+### Problema Operacional
+
+V0.22 permite completar en una sola operacion el flujo humano de aprobacion y continuacion. Despues de esa operacion, el sistema necesita distinguir entre "la ejecucion termino" y "el run quedo finalizado con evidencia persistida consistente".
+
+V0.23 aporta capacidad operacional real: un cierre final auditable que verifica consistencia entre evidencias existentes antes de declarar un run como finalizado, sin crear otra API read-only redundante ni duplicar subsistemas previos.
+
+### Superficie V0.23
+
+Operacion futura minima:
+
+- `finalizeControlledRun(runId)`.
+
+Entrada:
+
+- `runId`.
+
+Salida:
+
+- `finalized`: el run tiene evidencia terminal coherente.
+- `not_found`: no existe Manifest V0.19 para `runId`.
+- `not_finalizable`: el run existe pero aun no tiene un estado terminal finalizable.
+- `finalization_inconsistent`: existen evidencias persistidas contradictorias.
+- `finalization_failed`: fallo controlado al leer o registrar el resultado de finalizacion.
+
+### Contrato Minimo
+
+`finalizeControlledRun(runId)` debe:
+
+- Usar Run Manifest V0.19 como identidad primaria.
+- Leer Execution solo cuando el Manifest tenga `executionId`.
+- Leer Budget Ledger solo cuando exista evidencia de provider call o costo aplicable.
+- Reutilizar Timeline V0.16 y Audit Index V0.17 como referencias auditables, sin reimplementar su logica.
+- Verificar que lifecycle del Manifest, estado de Execution, evidencia de Ledger y Timeline no se contradigan.
+- Mantener finalization como outcome separado del lifecycle del Manifest.
+- Registrar, si la persistencia existe, solo un marcador append-only de finalizacion con referencias a evidencias existentes; no copiar prompts, ledger completo, timeline completo ni authority audit completo.
+- Devolver razones auditables y sanitizadas.
+- No crear executions ficticias para `dry_run`, `profile_rejected` o runs no finalizables.
+
+### Flujo V0.23
+
+1. Leer Manifest V0.19 por `runId`.
+2. Si no existe, devolver `not_found`.
+3. Confirmar que el lifecycle actual sea terminal y finalizable.
+4. Si hay `executionId`, leer Execution y Timeline V0.16.
+5. Si hubo provider call o costo aplicable, verificar Budget Ledger asociado.
+6. Construir checks deterministas de consistencia.
+7. Si hay contradiccion persistida, devolver `finalization_inconsistent` sin resolver automaticamente que fuente es correcta.
+8. Si la evidencia es suficiente y coherente, devolver `finalized`.
+9. Registrar un outcome append-only de finalizacion solo como referencia compacta a las evidencias usadas.
+
+### Invariantes De Seguridad
+
+- Router COST-FIRST permanece intacto.
+- Human Approval Gate permanece intacto.
+- `advisorAuthority` permanece intacto.
+- No se agrega autoridad nueva.
+- No se llama provider.
+- No hay retries.
+- No hay fallback.
+- No se reejecuta Router, Authority Policy, Token Governor, Budget Enforcement ni Evaluator.
+- No se modifica Execution del Kernel.
+- No se recalcula Budget Ledger ni se reescriben entradas historicas.
+- No se duplican Timeline, Audit Index, Ledger, Authority Audit ni Manifest.
+- Evidencia faltante o ambigua no se interpreta como exito.
+- Contradicciones persistidas se reportan y no se corrigen automaticamente.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
+### Limites V0.23
+
+- No cambiar Router COST-FIRST.
+- No cambiar Human Approval Gate.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No reimplementar Kernel, Timeline, Audit Index, Budget Ledger, Authority Audit ni Manifest.
+- No ejecutar provider calls.
+
+### Criterios De Aceptacion V0.23
+
+- Existe contrato documental para `finalizeControlledRun(runId)`.
+- `not_found` aplica solo cuando no existe Manifest V0.19.
+- `not_finalizable` aplica cuando el run no tiene estado terminal finalizable.
+- `finalized` exige evidencia persistida coherente entre Manifest, Execution, Ledger y Timeline cuando esas fuentes aplican.
+- `finalization_inconsistent` reporta contradicciones sin resolverlas automaticamente.
+- Finalization outcome permanece separado del lifecycle del Manifest.
+- Cualquier registro de finalizacion es append-only, compacto y referencial.
+- No se crean executions ficticias.
+- No se llama provider ni se modifica routing, autoridad, presupuesto o evaluacion.
+- No se duplican subsistemas existentes.
+- Secretos y prompts completos permanecen sanitizados.
+
 ## Apertura V0.20
 
 Titulo: V0.20 - Controlled Run Status and Approval Resolution API.

@@ -12,6 +12,7 @@ import type {
   ControlledExecutionRunManifestProfileSnapshot,
   ControlledExecutionRunManifestReferences,
   ControlledExecutionRunManifestSnapshot,
+  ControlledRunFinalizationResult,
   ControlledRunApprovalDecision,
   ControlledRunApprovalResolutionResult,
   ControlledRunStatusDataQuality,
@@ -412,6 +413,104 @@ export class ControlledOperationalExecutionV018 {
     return completionFromContinuationFailure(runId, approvalResolution, continuation);
   }
 
+  async finalizeControlledRun(runId: string): Promise<ControlledRunFinalizationResult> {
+    const manifestEvents = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(runId);
+    const manifestSnapshot = latestManifestSnapshot(manifestEvents);
+
+    if (!manifestSnapshot) {
+      return {
+        status: "not_found",
+        runId,
+        reason: `Controlled run not found for runId ${runId}.`
+      };
+    }
+
+    const existingFinalization = [...manifestSnapshot.events]
+      .reverse()
+      .find((event) => event.finalization);
+
+    if (existingFinalization?.finalization?.status === "finalized") {
+      return {
+        status: "finalized",
+        runId,
+        executionId: existingFinalization.executionId,
+        lifecycleStatus: existingFinalization.lifecycleStatus,
+        dataQuality: existingFinalization.finalization.dataQuality ?? "complete",
+        references: existingFinalization.finalization.checkedReferences,
+        manifestRecordingStatus: "manifest_recorded",
+        manifest: manifestSnapshot,
+        reason: `Controlled run ${runId} was already finalized from append-only manifest evidence.`
+      };
+    }
+
+    const latest = manifestSnapshot.latestEvent;
+
+    if (!isFinalizableLifecycle(latest.lifecycleStatus)) {
+      return {
+        status: "not_finalizable",
+        runId,
+        executionId: latest.executionId,
+        lifecycleStatus: latest.lifecycleStatus,
+        reason: `Controlled run ${runId} is not finalizable from lifecycle ${latest.lifecycleStatus}.`
+      };
+    }
+
+    const check = await this.checkFinalizationConsistency(latest);
+
+    if (check.status === "not_finalizable") {
+      return {
+        status: "not_finalizable",
+        runId,
+        executionId: latest.executionId,
+        lifecycleStatus: latest.lifecycleStatus,
+        reason: check.reason
+      };
+    }
+
+    if (check.status === "finalization_inconsistent") {
+      return {
+        status: "finalization_inconsistent",
+        runId,
+        executionId: latest.executionId,
+        lifecycleStatus: latest.lifecycleStatus,
+        dataQuality: check.dataQuality,
+        references: check.references,
+        reason: check.reason
+      };
+    }
+
+    const recorded = await this.recordFinalizationEvent({
+      latest,
+      references: check.references,
+      dataQuality: check.dataQuality,
+      reason: check.reason
+    });
+
+    if (recorded.status === "manifest_record_failed") {
+      return {
+        status: "finalization_failed",
+        runId,
+        executionId: latest.executionId,
+        lifecycleStatus: latest.lifecycleStatus,
+        manifestRecordingStatus: recorded.status,
+        manifest: recorded.snapshot,
+        reason: `Controlled run ${runId} finalization was verified but marker recording failed: ${recorded.reason}`
+      };
+    }
+
+    return {
+      status: "finalized",
+      runId,
+      executionId: latest.executionId,
+      lifecycleStatus: latest.lifecycleStatus,
+      dataQuality: check.dataQuality,
+      references: check.references,
+      manifestRecordingStatus: "manifest_recorded",
+      manifest: recorded.snapshot,
+      reason: check.reason
+    };
+  }
+
   private async continuationFromCompletedManifest(
     runStatus: Extract<ControlledRunStatusReadResult, { status: "found" }>
   ): Promise<ControlledExecutionContinuationResult> {
@@ -667,6 +766,183 @@ export class ControlledOperationalExecutionV018 {
         reason: error instanceof Error ? error.message : "Unknown manifest persistence error."
       };
     }
+  }
+
+  private async recordFinalizationEvent(input: {
+    latest: ControlledExecutionRunManifestEvent;
+    references: ControlledExecutionRunManifestReferences;
+    dataQuality: "complete" | "partial";
+    reason: string;
+  }): Promise<{
+    status: ControlledExecutionManifestRecordingStatus;
+    reason: string;
+    snapshot?: ControlledExecutionRunManifestSnapshot;
+  }> {
+    try {
+      const existingEvents = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(
+        input.latest.runId
+      );
+      const event: ControlledExecutionRunManifestEvent = {
+        id: `run_manifest_${input.latest.runId}_${existingEvents.length}`,
+        runId: input.latest.runId,
+        sequence: existingEvents.length,
+        lifecycleStatus: input.latest.lifecycleStatus,
+        profileFingerprint: input.latest.profileFingerprint,
+        profileSnapshot: input.latest.profileSnapshot,
+        controlledStatus: input.latest.controlledStatus,
+        profileValidationStatus: input.latest.profileValidationStatus,
+        executionId: input.latest.executionId,
+        provider: input.latest.provider,
+        model: input.latest.model,
+        estimatedCostUsd: input.latest.estimatedCostUsd,
+        actualCostUsd: input.latest.actualCostUsd,
+        evaluationStatus: input.latest.evaluationStatus,
+        references: input.references,
+        finalization: {
+          status: "finalized",
+          dataQuality: input.dataQuality,
+          checkedReferences: input.references,
+          reason: sanitizeText(input.reason),
+          createdAt: new Date()
+        },
+        reason: sanitizeText(input.reason),
+        createdAt: new Date()
+      };
+
+      await this.dependencies.stateMemory.saveControlledExecutionRunManifestEvent(event);
+
+      return {
+        status: "manifest_recorded",
+        reason: "Controlled run finalization marker recorded.",
+        snapshot: latestManifestSnapshot([...existingEvents, event])
+      };
+    } catch (error) {
+      return {
+        status: "manifest_record_failed",
+        reason: error instanceof Error ? error.message : "Unknown finalization marker persistence error."
+      };
+    }
+  }
+
+  private async checkFinalizationConsistency(
+    latest: ControlledExecutionRunManifestEvent
+  ): Promise<
+    | {
+        status: "finalized";
+        dataQuality: "complete" | "partial";
+        references: ControlledExecutionRunManifestReferences;
+        reason: string;
+      }
+    | {
+        status: "not_finalizable";
+        reason: string;
+      }
+    | {
+        status: "finalization_inconsistent";
+        dataQuality?: "complete" | "partial" | "inconsistent";
+        references: ControlledExecutionRunManifestReferences;
+        reason: string;
+      }
+  > {
+    if (!latest.executionId) {
+      if (latest.lifecycleStatus === "profile_rejected" || latest.lifecycleStatus === "dry_run_ready") {
+        return {
+          status: "finalized",
+          dataQuality: "complete",
+          references: latest.references,
+          reason: `Controlled run ${latest.runId} finalized from terminal manifest lifecycle ${latest.lifecycleStatus} without fictitious Execution.`
+        };
+      }
+
+      return {
+        status: "not_finalizable",
+        reason: `Controlled run ${latest.runId} has no executionId for lifecycle ${latest.lifecycleStatus}.`
+      };
+    }
+
+    const [execution, events, ledgerEntries, timeline, summary, authorityEntries] = await Promise.all([
+      this.dependencies.stateMemory.getExecution(latest.executionId),
+      this.dependencies.stateMemory.listEvents(latest.executionId),
+      this.dependencies.stateMemory.listBudgetLedgerEntries(latest.executionId),
+      this.dependencies.executionAuditTimeline.getExecutionAuditTimeline(latest.executionId),
+      this.dependencies.executionAuditIndex.getExecutionAuditSummary(latest.executionId),
+      this.dependencies.stateMemory.listAuthorityDecisionAuditEntries(latest.executionId)
+    ]);
+    const references: ControlledExecutionRunManifestReferences = {
+      executionId: latest.executionId,
+      timeline: {
+        status: timeline.status,
+        dataQuality: timeline.status === "found" ? timeline.dataQuality : undefined
+      },
+      auditSummary: {
+        status: summary.status,
+        requiresAttention: summary.status === "found" ? summary.summary.requiresAttention : undefined
+      },
+      budgetLedger: {
+        entryCount: ledgerEntries.length
+      },
+      authorityAudit: {
+        entryCount: authorityEntries.length
+      }
+    };
+    const contradictions: string[] = [];
+
+    if (!execution) {
+      contradictions.push(`Manifest references missing Execution ${latest.executionId}.`);
+    }
+
+    if (execution && !lifecycleMatchesExecution(latest.lifecycleStatus, execution.status)) {
+      contradictions.push(
+        `Manifest lifecycle ${latest.lifecycleStatus} contradicts Execution status ${execution.status}.`
+      );
+    }
+
+    if (timeline.status !== "found") {
+      contradictions.push(`Timeline is not found for Execution ${latest.executionId}.`);
+    } else if (timeline.dataQuality === "inconsistent") {
+      contradictions.push(`Timeline reports inconsistent evidence: ${timeline.reason}`);
+    }
+
+    if (summary.status === "found" && summary.summary.hasInconsistency) {
+      contradictions.push(`Audit summary reports inconsistency for Execution ${latest.executionId}.`);
+    }
+
+    if (hasProviderCallEvidence(events, ledgerEntries) && ledgerEntries.length === 0) {
+      contradictions.push("Provider call evidence exists without Budget Ledger entry.");
+    }
+
+    if (latest.lifecycleStatus === "live_completed" && !hasProviderCallEvidence(events, ledgerEntries)) {
+      contradictions.push("Completed live run has no provider call evidence.");
+    }
+
+    if (latest.provider) {
+      const providerLedgerEntry = ledgerEntries.find((entry) => entry.calculationStatus !== "not_applicable");
+
+      if (
+        providerLedgerEntry &&
+        (providerLedgerEntry.provider !== latest.provider || providerLedgerEntry.model !== latest.model)
+      ) {
+        contradictions.push(
+          `Manifest provider/model ${latest.provider}/${latest.model} contradicts Budget Ledger ${providerLedgerEntry.provider}/${providerLedgerEntry.model}.`
+        );
+      }
+    }
+
+    if (contradictions.length > 0) {
+      return {
+        status: "finalization_inconsistent",
+        dataQuality: timeline.status === "found" ? timeline.dataQuality : undefined,
+        references,
+        reason: `Controlled run ${latest.runId} cannot be finalized: ${contradictions.join(" ")}`
+      };
+    }
+
+    return {
+      status: "finalized",
+      dataQuality: timeline.status === "found" && timeline.dataQuality === "complete" ? "complete" : "partial",
+      references,
+      reason: `Controlled run ${latest.runId} finalized with coherent persisted Manifest, Execution, Ledger, and Timeline evidence.`
+    };
   }
 
   private async referencesFor(
@@ -1193,6 +1469,30 @@ function controlledStatusFromLifecycle(
   }
 
   return "execution_failed";
+}
+
+function isFinalizableLifecycle(lifecycleStatus: ControlledExecutionRunLifecycleStatus): boolean {
+  return (
+    lifecycleStatus === "profile_rejected" ||
+    lifecycleStatus === "dry_run_ready" ||
+    lifecycleStatus === "live_completed" ||
+    lifecycleStatus === "live_failed"
+  );
+}
+
+function lifecycleMatchesExecution(
+  lifecycleStatus: ControlledExecutionRunLifecycleStatus,
+  executionStatus: ExecutionStatus
+): boolean {
+  if (lifecycleStatus === "live_completed") {
+    return executionStatus === "succeeded";
+  }
+
+  if (lifecycleStatus === "live_failed") {
+    return executionStatus === "failed" || executionStatus === "cancelled";
+  }
+
+  return true;
 }
 
 function effectiveSelectionFromPendingStep(
