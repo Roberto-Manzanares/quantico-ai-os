@@ -106,7 +106,8 @@ export function createQuanticoSystem(options: QuanticoSystemOptions = {}) {
     tokenGovernor,
     orchestrator,
     executionAuditTimeline,
-    executionAuditIndex
+    executionAuditIndex,
+    humanApprovalGate
   });
 
   return {

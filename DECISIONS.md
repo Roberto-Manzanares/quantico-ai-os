@@ -2015,3 +2015,51 @@ Criterios de aceptacion:
 - Conflicto de `runId` con fingerprint distinto falla cerrado.
 - No se persisten prompts completos, secretos ni credenciales.
 - Router COST-FIRST, `advisorAuthority`, Human Approval Gate, ProviderAdapter y provider behavior permanecen intactos.
+
+## Decision 044: V0.20 Abre Controlled Run Status and Approval Resolution API
+
+Estado: aceptada.
+
+Decision:
+
+V0.20 se abre como fase documental para definir una superficie operacional minima por `runId`: `getControlledRunStatus(runId)` y `resolveControlledRunApproval(runId, approvalDecision)`.
+
+Razon:
+
+V0.19 hizo persistible e idempotente la invocacion operacional mediante Manifest, pero el `runId` necesita una superficie de operacion para recuperar estado y resolver aprobaciones pendientes sin depender siempre de `executionId`. Esto aporta capacidad operacional real sin crear otra capa de metricas ni duplicar Timeline, Audit Index, Budget Ledger o Authority Audit.
+
+El Kernel actual no expone una primitiva segura para continuar exactamente la misma Execution hasta provider despues de aprobar sin reejecutar Router, Authority Policy o presupuesto. Por eso V0.20 resuelve la aprobacion mediante Human Approval Gate, pero no promete continuar la ejecucion real hasta provider. Esa continuacion queda para una version futura.
+
+Capacidad operacional nueva:
+
+- Consultar estado de cualquier invocacion registrada por `runId`, incluyendo `dry_run` y `profile_rejected` que no tienen Execution.
+- Determinar si un run esta pendiente de aprobacion y si su aprobacion puede resolverse.
+- Resolver un `live_pending_approval` conservando el mismo `runId`, `executionId` y `effectiveSelection`.
+- Evitar provider calls duplicadas al reutilizar el `runId` como identidad operacional.
+
+Contrato definido:
+
+- `getControlledRunStatus(runId)` es read-only.
+- `getControlledRunStatus` devuelve `found` si existe manifest V0.19 y `not_found` solo si no existe.
+- `resolveControlledRunApproval(runId, approvalDecision)` solo puede operar sobre `live_pending_approval` con pending approval persistida.
+- `resolveControlledRunApproval` devuelve `approved`, `rejected`, `not_found`, `not_resolvable` o `approval_resolution_failed`.
+- Resolucion de aprobacion no llama provider, no reroutea, no reevalua Authority Policy, no recalcula `effectiveSelection` y no crea una nueva invocacion logica.
+- Status y resolucion referencian evidencias existentes, no duplican sus datos ni logica.
+
+Consecuencia:
+
+V0.20 convierte el manifest V0.19 en una pieza operable para soporte y resolucion segura de aprobaciones. No cambia Router COST-FIRST, `advisorAuthority`, Human Approval Gate, ProviderAdapter ni Kernel Execution. No agrega autoridad nueva, fallback, retries, dashboard, nueva DB ni provider behavior.
+
+Criterios de aceptacion:
+
+- `getControlledRunStatus(runId)` permite consultar estado operacional por manifest.
+- `not_found` solo se usa cuando no existe manifest para `runId`.
+- `approvalResolutionEligible` solo es `true` para `live_pending_approval` con pending approval persistida.
+- Resolucion aprobada conserva `runId`, `executionId` y `effectiveSelection`.
+- Resolucion rechazada no llama provider.
+- Resolucion no reroutea ni reevalua Authority Policy.
+- V0.20 no continua la ejecucion hasta provider despues de aprobar; esa primitiva queda para una version futura.
+- Maximo una provider call por execution attempt se mantiene.
+- V0.20 reutiliza Manifest V0.19, Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit sin duplicarlos.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+- Router COST-FIRST, `advisorAuthority`, Human Approval Gate y ProviderAdapter permanecen intactos.

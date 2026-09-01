@@ -370,7 +370,8 @@ test("V0.19 pre-provider manifest persistence failure stops before provider", as
     tokenGovernor: system.tokenGovernor,
     orchestrator: system.orchestrator,
     executionAuditTimeline: system.executionAuditTimeline,
-    executionAuditIndex: system.executionAuditIndex
+    executionAuditIndex: system.executionAuditIndex,
+    humanApprovalGate: system.humanApprovalGate
   });
 
   try {
@@ -403,7 +404,8 @@ test("V0.19 post-provider manifest failure does not retry provider call", async 
     tokenGovernor: system.tokenGovernor,
     orchestrator: system.orchestrator,
     executionAuditTimeline: system.executionAuditTimeline,
-    executionAuditIndex: system.executionAuditIndex
+    executionAuditIndex: system.executionAuditIndex,
+    humanApprovalGate: system.humanApprovalGate
   });
 
   try {
@@ -500,6 +502,192 @@ test("V0.19 manifest sanitizes profile data and does not persist prompts or secr
     assert.doesNotMatch(serialized, /Return QUANTICO_V018_OK without leaking/);
     assert.match(serialized, /goalDigest/);
     assert.match(serialized, /\[redacted\]/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 getControlledRunStatus returns found and not_found from manifest evidence", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai: new FakeProvider("QUANTICO_V018_OK") }
+  });
+
+  try {
+    const run = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "dry_run", runId: "run_v020_status" })
+    );
+    const found = await system.controlledOperationalExecution.getControlledRunStatus(run.runId ?? "");
+    const missing = await system.controlledOperationalExecution.getControlledRunStatus("run_v020_missing");
+
+    assert.equal(found.status, "found");
+    assert.equal(found.status === "found" ? found.lifecycleStatus : undefined, "dry_run_ready");
+    assert.equal(found.status === "found" ? found.approvalResolutionEligible : undefined, false);
+    assert.equal(missing.status, "not_found");
+    assert.match(missing.reason, /not found/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 approval resolution approves pending step without continuing provider call", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called before approval");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v020_approve",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    assert.ok(pending.executionId);
+    const beforeStatus = await system.controlledOperationalExecution.getControlledRunStatus(pending.runId ?? "");
+    assert.equal(beforeStatus.status, "found");
+    assert.equal(beforeStatus.status === "found" ? beforeStatus.approvalResolutionEligible : undefined, true);
+    const effectiveSelection = beforeStatus.status === "found" ? beforeStatus.effectiveSelection : undefined;
+
+    const approved = await system.controlledOperationalExecution.resolveControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved", reason: "approved for V0.20 approval resolution" }
+    );
+    const execution = await system.stateMemory.getExecution(pending.executionId);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(pending.runId);
+
+    assert.equal(approved.status, "approved");
+    assert.equal(approved.runId, pending.runId);
+    assert.equal(approved.executionId, pending.executionId);
+    assert.deepEqual(approved.status === "approved" ? approved.effectiveSelection : undefined, effectiveSelection);
+    assert.equal(execution?.status, "running");
+    assert.equal(await system.stateMemory.getPendingApprovalStep(pending.executionId), undefined);
+    assert.equal(openai.calls.length, 0);
+    assert.equal(manifestEvents.length, 2);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 approval resolution rejects pending action with zero provider calls", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v020_reject",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    assert.ok(pending.executionId);
+
+    const rejected = await system.controlledOperationalExecution.resolveControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "rejected", reason: "blocked for V0.20 test" }
+    );
+    const execution = await system.stateMemory.getExecution(pending.executionId);
+
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.runId, pending.runId);
+    assert.equal(rejected.executionId, pending.executionId);
+    assert.equal(execution?.status, "cancelled");
+    assert.equal(await system.stateMemory.getPendingApprovalStep(pending.executionId), undefined);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 states without pending approval fail closed without provider calls", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const dryRun = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "dry_run", runId: "run_v020_not_resolvable" })
+    );
+    const resolution = await system.controlledOperationalExecution.resolveControlledRunApproval(
+      dryRun.runId ?? "",
+      { decision: "approved" }
+    );
+
+    assert.equal(resolution.status, "not_resolvable");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 missing pending approval fails closed even when manifest is pending", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v020_missing_pending",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    assert.ok(pending.executionId);
+    await system.stateMemory.clearPendingApprovalStep(pending.executionId);
+
+    const status = await system.controlledOperationalExecution.getControlledRunStatus(pending.runId ?? "");
+    const resolution = await system.controlledOperationalExecution.resolveControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved" }
+    );
+
+    assert.equal(status.status, "found");
+    assert.equal(status.status === "found" ? status.approvalResolutionEligible : undefined, false);
+    assert.equal(status.status === "found" ? status.dataQuality : undefined, "inconsistent");
+    assert.equal(resolution.status, "not_resolvable");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.20 API exposes controlled run status and approval resolution", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const api = createQuanticoApi({ stateFilePath });
+
+  try {
+    const run = await api.runControlledExecution(profile({ mode: "dry_run", runId: "run_v020_api" }));
+    const status = await api.getControlledRunStatus(run.runId ?? "");
+    const resolution = await api.resolveControlledRunApproval(run.runId ?? "", { decision: "approved" });
+
+    assert.equal(status.status, "found");
+    assert.equal(resolution.status, "not_resolvable");
   } finally {
     await cleanup();
   }

@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.19 opened.
+Fase: V0.20 opened.
 
-Version objetivo: V0.19.
+Version objetivo: V0.20.
 
-Codigo implementado: no para V0.19.
+Codigo implementado: no para V0.20.
 
-Estado actual: V0.19 documentalmente abierta.
+Estado actual: V0.20 documentalmente abierta.
 
-Ultimo hito: apertura documental de V0.19 Controlled Execution Run Manifest.
+Ultimo hito: apertura documental de V0.20 Controlled Run Status and Approval Resolution API.
 
 Provider validado V0.1: OpenAI.
 
@@ -257,6 +257,24 @@ Persistence outcomes V0.19: `manifest_recorded` y `manifest_record_failed`. No s
 Invariantes V0.19: `executionId` se enlaza solo cuando el Kernel realmente crea una Execution; no se crean executions ficticias para `dry_run` o `profile_rejected`; no provider calls para `dry_run` o `profile_rejected`; maximo una provider call por execution attempt; Human Approval Gate no se salta; Router COST-FIRST, `advisorAuthority`, ProviderAdapter, V0.16 Timeline y V0.17 Audit Index permanecen intactos; el manifest no persiste prompts completos, API keys, workspace IDs ni secretos.
 
 Limites V0.19: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel, Timeline, Audit Index ni metricas existentes, no duplicar Budget Ledger ni Authority Audit, no cambiar Execution del Kernel y no ejecutar provider calls durante la fase documental.
+
+Commit de cierre V0.19: `b2ff554acb0c13918eaa0b8a3b937f35a8a3847d`.
+
+V0.20: comienza como fase documental separada.
+
+Titulo V0.20: Controlled Run Status and Approval Resolution API.
+
+Objetivo V0.20: definir una superficie operacional minima por `runId` para consultar el estado de una invocacion controlada y resolver de forma segura un `live_pending_approval` sin crear una nueva invocacion logica.
+
+Problema operacional V0.20: V0.19 persiste manifests por `runId`, pero sin una superficie por `runId` un operador no puede recuperar de forma uniforme un `dry_run`, `profile_rejected`, `live_pending_approval`, `live_completed` o `live_failed`, ni resolver un pending approval conservando la misma seleccion efectiva.
+
+Capacidad nueva V0.20: `getControlledRunStatus(runId)` consulta estado operacional desde Manifest V0.19 y referencias existentes; `resolveControlledRunApproval(runId, approvalDecision)` permite resolver una aprobacion solo cuando existe `live_pending_approval` con pending approval persistida, conservando `runId`, `executionId` y `effectiveSelection`.
+
+Contrato V0.20: `getControlledRunStatus` devuelve `found` si existe manifest y `not_found` solo si no existe. `resolveControlledRunApproval` puede devolver `approved`, `rejected`, `not_found`, `not_resolvable` o `approval_resolution_failed`. Ambas superficies deben sanitizar datos y referenciar V0.16 Timeline, V0.17 Audit Index, Budget Ledger y Authority Audit cuando existan, sin duplicar sus datos ni logica.
+
+Invariantes V0.20: Router COST-FIRST intacto; `advisorAuthority` intacto; Human Approval Gate intacto; cero autoridad nueva; no rerouting durante resolucion de aprobacion; no reejecutar Authority Policy; no crear executions ficticias; maximo una provider call por execution attempt; `getControlledRunStatus` read-only; `resolveControlledRunApproval` no llama provider ni continua la ejecucion hasta provider; sin prompts completos, API keys, workspace IDs ni secretos.
+
+Limites V0.20: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel, Timeline, Audit Index ni metricas existentes, no duplicar Budget Ledger, Authority Audit ni Manifest V0.19, y no ejecutar provider calls durante la fase documental.
 
 ## Cierre V0.18
 
@@ -702,6 +720,13 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
+- Implementar V0.20 Controlled Run Status and Approval Resolution API solo despues de aprobar el contrato documental.
+- Exponer `getControlledRunStatus(runId)` sobre Manifest V0.19 sin writes.
+- Exponer `resolveControlledRunApproval(runId, approvalDecision)` solo para `live_pending_approval` con pending approval persistida.
+- Conservar `runId`, `executionId` y `effectiveSelection` durante la resolucion de aprobacion.
+- Evitar rerouting, re-evaluacion de Authority Policy, nuevas invocaciones logicas y provider calls duplicadas.
+- Dejar explicito que V0.20 no implementa continuacion real hasta provider despues de aprobar; esa primitiva pertenece a una version futura.
+- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit y Manifest V0.19 sin duplicar datos ni logica.
 - Implementar V0.19 Controlled Execution Run Manifest solo despues de aprobar el contrato documental.
 - Persistir un manifest append-only e idempotente por `runId` por invocacion de `runControlledExecution(profile)`.
 - Registrar `dry_run`, `profile_rejected`, `live_pending_approval`, `live_completed` y `live_failed` sin depender de que exista siempre una Execution del Kernel.

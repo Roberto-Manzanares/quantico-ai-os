@@ -2301,6 +2301,215 @@ Cada execution attempt mantiene maximo una provider call. No hay retries ni fall
 - No se agregan dashboards, billing, nuevos providers, ML ni nueva DB.
 - No se exponen prompts completos, API keys, workspace IDs ni secretos.
 
+## Apertura V0.20
+
+Titulo: V0.20 - Controlled Run Status and Approval Resolution API.
+
+Estado de V0.19: cerrada y congelada.
+
+Commit de cierre V0.19: `b2ff554acb0c13918eaa0b8a3b937f35a8a3847d`.
+
+V0.20 comienza como fase documental separada.
+
+### Objetivo V0.20
+
+Definir una superficie operacional minima basada en `runId` para consultar el estado de una invocacion controlada y, cuando exista una aprobacion humana pendiente, resolver esa aprobacion sin crear una nueva invocacion logica ni reejecutar routing.
+
+### Problema Operacional
+
+V0.19 persiste un `ControlledExecutionRunManifest` por invocacion de `runControlledExecution(profile)`, incluso cuando no existe `executionId`. Sin una superficie operacional por `runId`, un operador no puede recuperar de forma uniforme que ocurrio con un `dry_run`, un `profile_rejected`, un `live_pending_approval` o una ejecucion completada.
+
+V0.20 hace util el `runId` como identificador operativo. No agrega una nueva capa de observabilidad general; expone estado y resolucion controlada de aprobaciones del intento registrado en V0.19, reutilizando Manifest, Human Approval Gate, V0.16 Timeline y V0.17 Audit Index.
+
+V0.20 no implementa continuacion real de ejecucion despues de aprobar porque el Kernel actual no expone una primitiva segura para continuar exactamente la misma Execution hasta provider sin reejecutar Router, Authority Policy o presupuesto. Esa continuacion queda fuera de V0.20 y debe definirse en una version futura.
+
+### Capacidad Nueva
+
+V0.20 habilita:
+
+- Consultar el estado operacional de una invocacion por `runId`.
+- Distinguir si el run no existe, esta listo como dry-run, fue rechazado, espera aprobacion, completo o fallo.
+- Resolver un `live_pending_approval` por `runId` despues de una decision humana valida.
+- Mantener la misma `executionId` y la misma `effectiveSelection` al resolver la aprobacion.
+- Evitar provider calls duplicadas por reuso de `runId`.
+- Devolver referencias auditables existentes sin copiar ni recalcular Timeline, Audit Index, Budget Ledger ni Authority Audit.
+
+### Superficie V0.20
+
+Operaciones minimas:
+
+- `getControlledRunStatus(runId)`.
+- `resolveControlledRunApproval(runId, approvalDecision)`.
+
+`getControlledRunStatus(runId)` es read-only.
+
+`resolveControlledRunApproval(runId, approvalDecision)` solo puede resolver una aprobacion de una invocacion que ya este en `live_pending_approval` y que tenga una pending approval persistida por Human Approval Gate. No debe crear una nueva invocacion logica ni prometer continuar la ejecucion hasta provider.
+
+### Contrato De Status
+
+Respuesta `found`:
+
+- `status: "found"`.
+- `runId`.
+- `executionId` cuando exista.
+- `mode`.
+- `lifecycleStatus`.
+- `persistenceOutcome`.
+- `profileFingerprint`.
+- `profileValidationStatus`.
+- `controlledStatus`.
+- `provider` cuando exista.
+- `model` cuando exista.
+- `effectiveSelection` cuando exista.
+- `evaluationStatus` cuando exista.
+- `estimatedCostUsd` cuando exista.
+- `actualCostUsd` cuando exista.
+- `requiresHumanApproval`.
+- `approvalResolutionEligible`.
+- `references` a Manifest, Timeline V0.16, Audit Summary V0.17, Budget Ledger y Authority Audit cuando existan.
+- `dataQuality`.
+- `reason`.
+
+Respuesta `not_found`:
+
+- `status: "not_found"`.
+- `runId`.
+- `reason` auditable.
+
+`status = "found"` aplica si existe evidencia persistida de manifest para ese `runId`.
+
+`status = "not_found"` solo aplica cuando no existe manifest persistido para ese `runId`.
+
+### Contrato De Approval Resolution
+
+`resolveControlledRunApproval(runId, approvalDecision)` recibe:
+
+- `runId`.
+- `approvalDecision`: `approved` o `rejected`.
+- `reason` cuando aplique.
+- metadata minima auditable de aprobacion.
+
+Resultado permitido:
+
+- `approved`: la aprobacion fue aceptada mediante Human Approval Gate existente. La Execution queda preparada segun el estado que ese gate produzca, pero V0.20 no ejecuta la continuacion provider.
+- `rejected`: la aprobacion humana rechazo el paso pendiente y no se llamo al provider.
+- `not_found`: no existe manifest para `runId`.
+- `not_resolvable`: el run existe pero no esta en `live_pending_approval` o no tiene pending approval persistida.
+- `approval_resolution_failed`: la resolucion de aprobacion fallo de forma controlada.
+
+Al resolver aprobacion:
+
+- Debe conservar el mismo `runId`.
+- Debe conservar el mismo `executionId`.
+- Debe conservar la misma `effectiveSelection`.
+- No debe reejecutar Router COST-FIRST.
+- No debe reejecutar Authority Policy.
+- No debe recalcular `effectiveSelection`.
+- No debe crear una nueva invocacion logica.
+- Debe mantener maximo una provider call para el execution attempt.
+- No debe llamar provider por si misma.
+
+### Flujo V0.20
+
+Consulta:
+
+1. Recibir `runId`.
+2. Leer manifest V0.19 persistido.
+3. Si no existe, devolver `not_found`.
+4. Derivar status operacional desde el historial append-only del manifest.
+5. Si existe `executionId`, leer referencias existentes de V0.16/V0.17/Budget Ledger/Authority Audit.
+6. Devolver status sanitizado sin prompts completos ni secretos.
+
+Resolucion de aprobacion:
+
+1. Recibir `runId` y decision humana.
+2. Leer manifest V0.19.
+3. Exigir `live_pending_approval`.
+4. Exigir pending approval persistida en Human Approval Gate.
+5. Aplicar aprobacion o rechazo usando el contrato existente del Human Approval Gate.
+6. Resolver solo con la misma `executionId` y `effectiveSelection`.
+7. Registrar la transicion mediante el manifest V0.19 sin duplicar eventos equivalentes.
+8. Devolver status actualizado y referencias auditables.
+
+### Data Quality V0.20
+
+`dataQuality` debe ser:
+
+- `complete`: manifest existe, lifecycle y references son consistentes para el estado reportado.
+- `partial`: falta evidencia no critica, por ejemplo references incompletas para una ejecucion no terminal.
+- `inconsistent`: manifest, execution, approval o audit references se contradicen.
+
+V0.20 no debe resolver contradicciones automaticamente. Debe reportarlas con razon auditable.
+
+### Invariantes De Seguridad
+
+- Router COST-FIRST permanece intacto.
+- `advisorAuthority` permanece intacto.
+- Human Approval Gate conserva su autoridad y no puede saltarse.
+- ProviderAdapter no cambia.
+- No se agrega autoridad nueva.
+- No hay fallback ni retries implicitos.
+- `resolveControlledRunApproval` no crea un nuevo `runId`.
+- `resolveControlledRunApproval` no crea una nueva Execution si el run ya tiene `executionId`.
+- Reusar `runId` nunca provoca segunda provider call para el mismo execution attempt.
+- Resolucion de aprobacion no reroutea ni reevalua autoridad.
+- Resolucion de aprobacion no duplica ledger ni authority audit.
+- `getControlledRunStatus` es read-only y no modifica State/Memory.
+- No se exponen prompts completos, API keys, workspace IDs, headers de autenticacion ni secretos.
+
+### Limites V0.20
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No reimplementar Kernel.
+- No reimplementar V0.16 Timeline.
+- No reimplementar V0.17 Audit Index.
+- No duplicar Budget Ledger.
+- No duplicar Authority Audit.
+- No duplicar Manifest V0.19.
+- No agregar nuevos providers.
+- No ejecutar provider calls durante la fase documental.
+- No persistir prompts completos ni secretos.
+
+### Casos Limite V0.20
+
+- `runId` inexistente: `not_found`.
+- `runId` con `dry_run_ready`: `found`, `approvalResolutionEligible = false`.
+- `runId` con `profile_rejected`: `found`, `approvalResolutionEligible = false`.
+- `runId` con `live_completed`: `found`, `approvalResolutionEligible = false`.
+- `runId` con `live_failed`: `found`, `approvalResolutionEligible = false`.
+- `runId` con `live_pending_approval` y pending approval existente: `found`, `approvalResolutionEligible = true`.
+- `live_pending_approval` sin pending approval persistida: `found` con `dataQuality = "inconsistent"` o `partial`, y `approvalResolutionEligible = false`.
+- Aprobacion rechazada: no provider call y status operacional rechazado o no reanudado segun Human Approval Gate.
+- Aprobacion aprobada: resuelve pending approval con mismo `executionId` y misma `effectiveSelection`, sin continuar provider en V0.20.
+- Falla al registrar transicion de manifest durante resolucion: debe reportarse sin repetir provider call.
+- Repetir resolucion con el mismo `runId` despues de completado: `not_resolvable`, sin provider call.
+- Datos sensibles en manifest, execution o approval: se omiten o sanitizan.
+
+### Criterios De Aceptacion V0.20
+
+- Existe contrato documental para `getControlledRunStatus(runId)`.
+- Existe contrato documental para `resolveControlledRunApproval(runId, approvalDecision)`.
+- `getControlledRunStatus` devuelve `found` si existe manifest V0.19 y `not_found` solo si no existe.
+- Status por `runId` distingue `dry_run_ready`, `profile_rejected`, `live_pending_approval`, `live_completed` y `live_failed`.
+- `approvalResolutionEligible` solo es `true` cuando existe `live_pending_approval` y pending approval persistida.
+- Resolucion aprobada conserva `runId`, `executionId` y `effectiveSelection`.
+- Resolucion rechazada no llama provider.
+- Resolucion no reroutea, no reevalua Authority Policy y no crea una nueva invocacion logica.
+- V0.20 no continua la ejecucion hasta provider despues de aprobar; esa primitiva queda para una version futura.
+- Maximo una provider call por execution attempt se mantiene.
+- V0.20 reutiliza Manifest V0.19, Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit sin duplicar datos ni logica.
+- `getControlledRunStatus` es read-only.
+- Router COST-FIRST, `advisorAuthority`, Human Approval Gate y ProviderAdapter permanecen intactos.
+- No hay provider calls adicionales, retries ni fallback.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
 ## Apertura V0.19
 
 Titulo: V0.19 - Controlled Execution Run Manifest.

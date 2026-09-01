@@ -9,9 +9,14 @@ import type {
   ControlledExecutionRunManifestProfileSnapshot,
   ControlledExecutionRunManifestReferences,
   ControlledExecutionRunManifestSnapshot,
+  ControlledRunApprovalDecision,
+  ControlledRunApprovalResolutionResult,
+  ControlledRunStatusDataQuality,
+  ControlledRunStatusReadResult,
   EvaluationCriterion,
   ExecutionConstraints,
-  ExecutionStatus
+  ExecutionStatus,
+  ShadowAdvisorSelection
 } from "../types.js";
 import type { ContextCompiler } from "./context-compiler.js";
 import type { ExecutionAuditIndexV017 } from "./execution-audit-index.js";
@@ -19,6 +24,7 @@ import type { ExecutionAuditTimelineV016 } from "./execution-audit-timeline.js";
 import type { ModelRouter } from "./model-router.js";
 import type { TokenGovernor } from "./token-governor.js";
 import type { StateMemory } from "./state-memory.js";
+import type { HumanApprovalGate } from "./human-approval-gate.js";
 import { determineTaskType, type Orchestrator } from "../orchestrator.js";
 
 export interface ControlledOperationalExecutionDependencies {
@@ -29,6 +35,7 @@ export interface ControlledOperationalExecutionDependencies {
   orchestrator: Orchestrator;
   executionAuditTimeline: ExecutionAuditTimelineV016;
   executionAuditIndex: ExecutionAuditIndexV017;
+  humanApprovalGate: HumanApprovalGate;
 }
 
 export class ControlledOperationalExecutionV018 {
@@ -76,6 +83,94 @@ export class ControlledOperationalExecutionV018 {
 
     const result = await this.runLive(runId, profile);
     return this.recordTransition(profileSnapshot, result, liveLifecycleStatus(result.status));
+  }
+
+  async getControlledRunStatus(runId: string): Promise<ControlledRunStatusReadResult> {
+    const events = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(runId);
+    const snapshot = latestManifestSnapshot(events);
+
+    if (!snapshot) {
+      return {
+        status: "not_found",
+        runId,
+        reason: `Controlled run not found for runId ${runId}.`
+      };
+    }
+
+    return this.statusFromManifest(snapshot);
+  }
+
+  async resolveControlledRunApproval(
+    runId: string,
+    approvalDecision: { decision: ControlledRunApprovalDecision; reason?: string }
+  ): Promise<ControlledRunApprovalResolutionResult> {
+    const runStatus = await this.getControlledRunStatus(runId);
+
+    if (runStatus.status === "not_found") {
+      return {
+        status: "not_found",
+        runId,
+        reason: runStatus.reason
+      };
+    }
+
+    if (!runStatus.approvalResolutionEligible || !runStatus.executionId) {
+      return {
+        status: "not_resolvable",
+        runId,
+        executionId: runStatus.executionId,
+        runStatus,
+        reason: `Controlled run ${runId} has no resolvable approval from lifecycle ${runStatus.lifecycleStatus}.`
+      };
+    }
+
+    try {
+      const command = {
+        executionId: runStatus.executionId,
+        reason: approvalDecision.reason
+      };
+      const result =
+        approvalDecision.decision === "approved"
+          ? await this.dependencies.humanApprovalGate.approvePendingStep(
+              command,
+              this.dependencies.stateMemory
+            )
+          : await this.dependencies.humanApprovalGate.rejectPendingStep(
+              command,
+              this.dependencies.stateMemory
+            );
+      const refreshedStatus = await this.getControlledRunStatus(runId);
+
+      if (approvalDecision.decision === "approved") {
+        return {
+          status: "approved",
+          runId,
+          executionId: runStatus.executionId,
+          effectiveSelection: runStatus.effectiveSelection,
+          approvalDecision: "approved",
+          runStatus: refreshedStatus,
+          reason: result.reason
+        };
+      }
+
+      return {
+        status: "rejected",
+        runId,
+        executionId: runStatus.executionId,
+        effectiveSelection: runStatus.effectiveSelection,
+        approvalDecision: "rejected",
+        runStatus: refreshedStatus,
+        reason: result.reason
+      };
+    } catch (error) {
+      return {
+        status: "approval_resolution_failed",
+        runId,
+        executionId: runStatus.executionId,
+        runStatus,
+        reason: error instanceof Error ? error.message : "Controlled run approval resolution failed."
+      };
+    }
   }
 
   private async resolveIdempotency(input: {
@@ -333,6 +428,68 @@ export class ControlledOperationalExecutionV018 {
       reason: postAuditReason(timeline, summary)
     };
   }
+
+  private async statusFromManifest(
+    snapshot: ControlledExecutionRunManifestSnapshot
+  ): Promise<ControlledRunStatusReadResult> {
+    const latest = snapshot.latestEvent;
+    const execution = latest.executionId
+      ? await this.dependencies.stateMemory.getExecution(latest.executionId)
+      : undefined;
+    const pendingApproval = latest.executionId
+      ? await this.dependencies.stateMemory.getPendingApprovalStep(latest.executionId)
+      : undefined;
+    const references = await this.referencesFor(
+      latest.executionId
+        ? {
+            status: latest.controlledStatus ?? controlledStatusFromLifecycle(latest.lifecycleStatus),
+            profileValidationStatus: latest.profileValidationStatus ?? "profile_validated",
+            runId: latest.runId,
+            executionId: latest.executionId,
+            provider: latest.provider,
+            model: latest.model,
+            estimatedCostUsd: latest.estimatedCostUsd,
+            actualCostUsd: latest.actualCostUsd,
+            evaluationStatus: latest.evaluationStatus,
+            reason: latest.reason
+          }
+        : undefined
+    );
+    const dataQuality = statusDataQuality({
+      latest,
+      executionStatus: execution?.status,
+      hasPendingApproval: Boolean(pendingApproval)
+    });
+
+    return {
+      status: "found",
+      runId: snapshot.runId,
+      executionId: latest.executionId,
+      mode: latest.profileSnapshot.mode,
+      lifecycleStatus: latest.lifecycleStatus,
+      persistenceOutcome: snapshot.recordingStatus,
+      profileFingerprint: snapshot.profileFingerprint,
+      profileValidationStatus: latest.profileValidationStatus,
+      controlledStatus: latest.controlledStatus,
+      provider: latest.provider,
+      model: latest.model,
+      effectiveSelection: effectiveSelectionFromPendingStep(pendingApproval),
+      evaluationStatus: latest.evaluationStatus,
+      estimatedCostUsd: latest.estimatedCostUsd,
+      actualCostUsd: latest.actualCostUsd,
+      requiresHumanApproval: latest.lifecycleStatus === "live_pending_approval",
+      approvalResolutionEligible:
+        latest.lifecycleStatus === "live_pending_approval" && Boolean(pendingApproval),
+      references,
+      dataQuality,
+      reason: controlledRunStatusReason({
+        latest,
+        dataQuality,
+        executionStatus: execution?.status,
+        hasPendingApproval: Boolean(pendingApproval)
+      })
+    };
+  }
 }
 
 export { ControlledOperationalExecutionV018 as SkeletonControlledOperationalExecution };
@@ -587,6 +744,72 @@ function controlledStatusFromLifecycle(
   }
 
   return "execution_failed";
+}
+
+function effectiveSelectionFromPendingStep(
+  pendingApproval: Awaited<ReturnType<StateMemory["getPendingApprovalStep"]>>
+): ShadowAdvisorSelection | undefined {
+  const value = pendingApproval?.metadata["effectiveSelection"];
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "provider" in value &&
+    "model" in value &&
+    typeof (value as { provider?: unknown }).provider === "string" &&
+    typeof (value as { model?: unknown }).model === "string"
+  ) {
+    return value as ShadowAdvisorSelection;
+  }
+
+  return undefined;
+}
+
+function statusDataQuality(input: {
+  latest: ControlledExecutionRunManifestEvent;
+  executionStatus?: ExecutionStatus;
+  hasPendingApproval: boolean;
+}): ControlledRunStatusDataQuality {
+  if (input.latest.lifecycleStatus === "live_pending_approval") {
+    if (!input.latest.executionId || !input.executionStatus) {
+      return "partial";
+    }
+
+    if (!input.hasPendingApproval && input.executionStatus === "needs_human") {
+      return "inconsistent";
+    }
+
+    if (!input.hasPendingApproval) {
+      return "partial";
+    }
+  }
+
+  if (input.latest.executionId && !input.executionStatus) {
+    return "inconsistent";
+  }
+
+  return "complete";
+}
+
+function controlledRunStatusReason(input: {
+  latest: ControlledExecutionRunManifestEvent;
+  dataQuality: ControlledRunStatusDataQuality;
+  executionStatus?: ExecutionStatus;
+  hasPendingApproval: boolean;
+}): string {
+  if (input.dataQuality === "inconsistent") {
+    return `Controlled run ${input.latest.runId} has inconsistent persisted evidence for lifecycle ${input.latest.lifecycleStatus}.`;
+  }
+
+  if (input.dataQuality === "partial") {
+    return `Controlled run ${input.latest.runId} is found with partial evidence for lifecycle ${input.latest.lifecycleStatus}.`;
+  }
+
+  if (input.latest.lifecycleStatus === "live_pending_approval" && input.hasPendingApproval) {
+    return `Controlled run ${input.latest.runId} is found and eligible for approval resolution.`;
+  }
+
+  return `Controlled run ${input.latest.runId} is found with lifecycle ${input.latest.lifecycleStatus}.`;
 }
 
 function postAuditReason(

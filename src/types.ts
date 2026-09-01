@@ -836,6 +836,78 @@ export interface ControlledExecutionRunManifestSnapshot {
   latestEvent: ControlledExecutionRunManifestEvent;
 }
 
+export type ControlledRunStatusDataQuality = "complete" | "partial" | "inconsistent";
+
+export type ControlledRunStatusReadResult =
+  | {
+      status: "found";
+      runId: string;
+      executionId?: string;
+      mode: ControlledExecutionMode;
+      lifecycleStatus: ControlledExecutionRunLifecycleStatus;
+      persistenceOutcome: ControlledExecutionManifestRecordingStatus;
+      profileFingerprint: string;
+      profileValidationStatus?: "profile_validated" | "profile_rejected";
+      controlledStatus?: ControlledExecutionStatus;
+      provider?: ProviderName;
+      model?: string;
+      effectiveSelection?: ShadowAdvisorSelection;
+      evaluationStatus?: EvaluationStatus;
+      estimatedCostUsd?: number | null;
+      actualCostUsd?: number | null;
+      requiresHumanApproval: boolean;
+      approvalResolutionEligible: boolean;
+      references: ControlledExecutionRunManifestReferences;
+      dataQuality: ControlledRunStatusDataQuality;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    };
+
+export type ControlledRunApprovalDecision = "approved" | "rejected";
+
+export type ControlledRunApprovalResolutionResult =
+  | {
+      status: "approved";
+      runId: string;
+      executionId: string;
+      effectiveSelection?: ShadowAdvisorSelection;
+      approvalDecision: "approved";
+      runStatus: ControlledRunStatusReadResult;
+      reason: string;
+    }
+  | {
+      status: "rejected";
+      runId: string;
+      executionId: string;
+      effectiveSelection?: ShadowAdvisorSelection;
+      approvalDecision: "rejected";
+      runStatus: ControlledRunStatusReadResult;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    }
+  | {
+      status: "not_resolvable";
+      runId: string;
+      executionId?: string;
+      runStatus: ControlledRunStatusReadResult;
+      reason: string;
+    }
+  | {
+      status: "approval_resolution_failed";
+      runId: string;
+      executionId?: string;
+      runStatus?: ControlledRunStatusReadResult;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
