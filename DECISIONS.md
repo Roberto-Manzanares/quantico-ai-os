@@ -2110,3 +2110,49 @@ Criterios de aceptacion:
 - Provider errors se normalizan y quedan trazables.
 - Evaluator existente determina el estado final.
 - No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
+## Decision 046: V0.22 Abre Controlled Approval Completion Command
+
+Estado: aceptada.
+
+Decision:
+
+V0.22 se abre como fase documental para definir `completeControlledRunApproval(runId, approvalDecision)`, un comando operacional minimo que compone explicitamente V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion humana.
+
+Razon:
+
+V0.20 ya resuelve aprobaciones por `runId` y V0.21 ya continua una Execution aprobada sin rerouting ni nueva Authority Policy. El siguiente incremento minimo no debe crear otra API read-only ni duplicar observabilidad; debe reducir friccion operacional permitiendo que un operador complete el flujo pendiente con un solo comando auditable.
+
+Capacidad operacional nueva:
+
+- Recibir una decision humana explicita sobre un run `live_pending_approval`.
+- Delegar resolucion de aprobacion a V0.20.
+- Delegar continuacion aprobada a V0.21 solo cuando la decision sea `approved`.
+- Terminar sin provider calls cuando la decision sea `rejected`.
+- Conservar `runId`, `executionId` y `effectiveSelection`.
+
+Contrato definido:
+
+- `completeControlledRunApproval(runId, approvalDecision)` devuelve `completed`, `rejected`, `not_found`, `not_completable` o `completion_failed`.
+- `not_found` aplica solo si no existe Manifest V0.19 para `runId`.
+- `not_completable` aplica si el run existe pero no puede resolverse o continuarse con evidencia persistida suficiente.
+- `completed` requiere que V0.20 resuelva aprobacion como `approved` y que V0.21 complete la continuacion.
+- `rejected` requiere que V0.20 resuelva rechazo y mantiene provider calls = 0.
+- La operacion es idempotente por evidencia persistida y no debe duplicar provider calls, Ledger ni Manifest.
+
+Consecuencia:
+
+V0.22 no concede autoridad nueva y no cambia Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution ni ProviderAdapter. No agrega fallback, retries, dashboard, nueva DB ni nuevos providers. La implementacion futura debe reutilizar Manifest V0.19, Approval Resolution V0.20, Continuation V0.21, Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit sin duplicar su logica.
+
+Criterios de aceptacion:
+
+- El comando usa V0.20 para resolver aprobacion y V0.21 para continuar.
+- El comando no reimplementa Kernel, Router, Authority Policy, Human Gate, Timeline, Audit Index, Ledger ni Manifest.
+- `approved` puede finalizar solo si V0.20 y V0.21 pasan sus precondiciones.
+- `rejected` conserva provider calls = 0.
+- Se conservan `runId`, `executionId` y `effectiveSelection`.
+- No se crea nueva Execution ni nuevo `runId`.
+- No se llama Router COST-FIRST ni Authority Policy.
+- Maximo una provider call por execution attempt.
+- Repetir el mismo comando no duplica provider calls, Ledger ni Manifest.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.

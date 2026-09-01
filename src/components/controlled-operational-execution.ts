@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
+  ControlledApprovalCompletionResult,
   ControlledExecutionAuditRequirements,
   BudgetLedgerEntry,
   ControlledExecutionContinuationResult,
@@ -321,6 +322,94 @@ export class ControlledOperationalExecutionV018 {
         reason: error instanceof Error ? error.message : "Approved execution continuation failed."
       };
     }
+  }
+
+  async completeControlledRunApproval(
+    runId: string,
+    approvalDecision: { decision: ControlledRunApprovalDecision; reason?: string }
+  ): Promise<ControlledApprovalCompletionResult> {
+    const runStatus = await this.getControlledRunStatus(runId);
+
+    if (runStatus.status === "not_found") {
+      return {
+        status: "not_found",
+        runId,
+        reason: runStatus.reason
+      };
+    }
+
+    if (approvalDecision.decision === "approved" && runStatus.lifecycleStatus === "live_completed") {
+      const continuation = await this.continueApprovedExecution(runId);
+
+      if (continuation.status === "continued") {
+        return completedFromContinuation(runId, undefined, continuation);
+      }
+
+      return completionFromContinuationFailure(runId, undefined, continuation);
+    }
+
+    if (approvalDecision.decision === "rejected" && runStatus.executionId) {
+      const events = await this.dependencies.stateMemory.listEvents(runStatus.executionId);
+
+      if (hasRejectedResolution(events)) {
+        return {
+          status: "rejected",
+          runId,
+          executionId: runStatus.executionId,
+          effectiveSelection: recoverEffectiveSelection(events) ?? runStatus.effectiveSelection,
+          approvalResolution: {
+            status: "rejected",
+            runId,
+            executionId: runStatus.executionId,
+            effectiveSelection: recoverEffectiveSelection(events) ?? runStatus.effectiveSelection,
+            approvalDecision: "rejected",
+            runStatus,
+            reason: `Idempotent rejected approval completion replayed for run ${runId}.`
+          },
+          reason: `Controlled run ${runId} approval was already rejected; provider call remains blocked.`
+        };
+      }
+    }
+
+    const approvalResolution = await this.resolveControlledRunApproval(runId, approvalDecision);
+
+    if (approvalResolution.status === "not_found") {
+      return {
+        status: "not_found",
+        runId,
+        reason: approvalResolution.reason
+      };
+    }
+
+    if (approvalResolution.status === "rejected") {
+      return {
+        status: "rejected",
+        runId,
+        executionId: approvalResolution.executionId,
+        effectiveSelection: approvalResolution.effectiveSelection,
+        approvalResolution,
+        reason: "Controlled run approval was rejected; provider call was not executed."
+      };
+    }
+
+    if (approvalResolution.status !== "approved") {
+      return {
+        status:
+          approvalResolution.status === "not_resolvable" ? "not_completable" : "completion_failed",
+        runId,
+        executionId: approvalResolution.executionId,
+        approvalResolution,
+        reason: `Controlled run approval could not be completed: ${approvalResolution.reason}`
+      };
+    }
+
+    const continuation = await this.continueApprovedExecution(runId);
+
+    if (continuation.status === "continued") {
+      return completedFromContinuation(runId, approvalResolution, continuation);
+    }
+
+    return completionFromContinuationFailure(runId, approvalResolution, continuation);
   }
 
   private async continuationFromCompletedManifest(
@@ -828,6 +917,12 @@ function hasApprovedResolution(events: ExecutionEvent[]): boolean {
   );
 }
 
+function hasRejectedResolution(events: ExecutionEvent[]): boolean {
+  return events.some(
+    (event) => event.type === "approval_decision" && event.decisionApplied === "rejected"
+  );
+}
+
 function hasProviderCallEvidence(
   events: ExecutionEvent[],
   ledgerEntries: BudgetLedgerEntry[]
@@ -836,6 +931,62 @@ function hasProviderCallEvidence(
     events.some((event) => event.type === "model_called" || event.type === "provider_error") ||
     ledgerEntries.some((entry) => entry.calculationStatus !== "not_applicable")
   );
+}
+
+function completedFromContinuation(
+  runId: string,
+  approvalResolution: ControlledRunApprovalResolutionResult | undefined,
+  continuation: Extract<ControlledExecutionContinuationResult, { status: "continued" }>
+): ControlledApprovalCompletionResult {
+  return {
+    status: "completed",
+    runId,
+    executionId: continuation.executionId,
+    effectiveSelection: continuation.effectiveSelection,
+    provider: continuation.provider,
+    model: continuation.model,
+    estimatedCostUsd: continuation.estimatedCostUsd,
+    actualCostUsd: continuation.actualCostUsd,
+    evaluationStatus: continuation.evaluationStatus,
+    executionStatus: continuation.executionStatus,
+    approvalResolution,
+    continuation,
+    reason: "Controlled approval completion resolved approval and continued the approved execution."
+  };
+}
+
+function completionFromContinuationFailure(
+  runId: string,
+  approvalResolution: ControlledRunApprovalResolutionResult | undefined,
+  continuation: ControlledExecutionContinuationResult
+): ControlledApprovalCompletionResult {
+  if (continuation.status === "not_found") {
+    return {
+      status: "not_found",
+      runId,
+      reason: continuation.reason
+    };
+  }
+
+  if (continuation.status === "not_continuable") {
+    return {
+      status: "not_completable",
+      runId,
+      executionId: continuation.executionId,
+      approvalResolution,
+      continuation,
+      reason: continuation.reason
+    };
+  }
+
+  return {
+    status: "completion_failed",
+    runId,
+    executionId: continuation.executionId,
+    approvalResolution,
+    continuation,
+    reason: continuation.reason
+  };
 }
 
 function recoverEffectiveSelection(events: ExecutionEvent[]): ShadowAdvisorSelection | undefined {

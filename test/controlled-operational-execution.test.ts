@@ -969,6 +969,267 @@ test("V0.21 API exposes approved execution continuation", async () => {
   }
 });
 
+test("V0.22 approved completion resolves approval and continues to completed", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v022_completed",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const before = await system.controlledOperationalExecution.getControlledRunStatus(
+      pending.runId ?? ""
+    );
+    const effectiveSelection = before.status === "found" ? before.effectiveSelection : undefined;
+    const result = await system.controlledOperationalExecution.completeControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved", reason: "approved for V0.22 completion" }
+    );
+    const executions = await system.stateMemory.listExecutions();
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+    const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(pending.executionId);
+
+    assert.equal(result.status, "completed");
+    assert.equal(result.status === "completed" ? result.runId : undefined, pending.runId);
+    assert.equal(result.status === "completed" ? result.executionId : undefined, pending.executionId);
+    assert.deepEqual(
+      result.status === "completed" ? result.effectiveSelection : undefined,
+      effectiveSelection
+    );
+    assert.equal(result.status === "completed" ? result.evaluationStatus : undefined, "pass");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(executions.length, 1);
+    assert.equal(ledgerEntries.length, 1);
+    assert.equal(manifestEvents.length, 3);
+    assert.deepEqual(
+      manifestEvents.map((event) => event.lifecycleStatus),
+      ["run_created", "live_pending_approval", "live_completed"]
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 rejected completion resolves approval with zero provider calls", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v022_rejected",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.completeControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "rejected", reason: "rejected for V0.22 completion" }
+    );
+    const execution = await system.stateMemory.getExecution(pending.executionId ?? "");
+
+    assert.equal(result.status, "rejected");
+    assert.equal(result.status === "rejected" ? result.runId : undefined, pending.runId);
+    assert.equal(result.status === "rejected" ? result.executionId : undefined, pending.executionId);
+    assert.equal(execution?.status, "cancelled");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 completion returns not_found for missing run", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const result = await system.controlledOperationalExecution.completeControlledRunApproval(
+      "run_v022_missing",
+      { decision: "approved" }
+    );
+
+    assert.equal(result.status, "not_found");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 completion is not_completable for non-pending runs", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const dryRun = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "dry_run", runId: "run_v022_not_completable" })
+    );
+    const result = await system.controlledOperationalExecution.completeControlledRunApproval(
+      dryRun.runId ?? "",
+      { decision: "approved" }
+    );
+
+    assert.equal(result.status, "not_completable");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 completion_failed when approval resolution fails", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const controlled = new ControlledOperationalExecutionV018({
+    stateMemory: system.stateMemory,
+    contextCompiler: system.contextCompiler,
+    modelRouter: system.modelRouter,
+    tokenGovernor: system.tokenGovernor,
+    orchestrator: system.orchestrator,
+    executionAuditTimeline: system.executionAuditTimeline,
+    executionAuditIndex: system.executionAuditIndex,
+    humanApprovalGate: new ThrowingHumanApprovalGate()
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v022_resolution_failed",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await controlled.completeControlledRunApproval(pending.runId ?? "", {
+      decision: "approved"
+    });
+
+    assert.equal(result.status, "completion_failed");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 completion_failed when approved continuation fails", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FailingProvider();
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v022_continuation_failed",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.completeControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved" }
+    );
+
+    assert.equal(result.status, "completion_failed");
+    assert.equal(openai.calls.length, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 approved completion is idempotent without duplicate provider, ledger, or manifest", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v022_idempotent",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const first = await system.controlledOperationalExecution.completeControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved" }
+    );
+    const second = await system.controlledOperationalExecution.completeControlledRunApproval(
+      pending.runId ?? "",
+      { decision: "approved" }
+    );
+    const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(pending.executionId);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(first.status, "completed");
+    assert.equal(second.status, "completed");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(ledgerEntries.length, 1);
+    assert.equal(manifestEvents.length, 3);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.22 API exposes controlled approval completion", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const api = createQuanticoApi({ stateFilePath });
+
+  try {
+    const result = await api.completeControlledRunApproval("run_v022_api_missing", {
+      decision: "approved"
+    });
+
+    assert.equal(result.status, "not_found");
+  } finally {
+    await cleanup();
+  }
+});
+
 function profile(
   overrides: Partial<ControlledExecutionProfile> = {}
 ): ControlledExecutionProfile {
@@ -1024,6 +1285,30 @@ class FakeProvider implements ProviderAdapter {
       estimatedCostUsd: null,
       latencyMs: 15
     };
+  }
+}
+
+class FailingProvider implements ProviderAdapter {
+  readonly provider = "openai" as const;
+  readonly calls: ModelCallRequest[] = [];
+
+  async sendMessage(request: ModelCallRequest): Promise<ModelCallResult> {
+    this.calls.push(request);
+    throw new Error("provider failed during V0.22 continuation");
+  }
+}
+
+class ThrowingHumanApprovalGate {
+  async evaluateAction(): Promise<never> {
+    throw new Error("not used in V0.22 approval completion test");
+  }
+
+  async approvePendingStep(): Promise<never> {
+    throw new Error("approval persistence unavailable");
+  }
+
+  async rejectPendingStep(): Promise<never> {
+    throw new Error("approval persistence unavailable");
   }
 }
 

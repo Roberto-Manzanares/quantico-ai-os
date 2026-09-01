@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.21 opened.
+Fase: V0.22 opened.
 
-Version objetivo: V0.21.
+Version objetivo: V0.22.
 
-Codigo implementado: no para V0.21.
+Codigo implementado: no para V0.22.
 
-Estado actual: V0.21 documentalmente abierta.
+Estado actual: V0.22 documentalmente abierta.
 
-Ultimo hito: apertura documental de V0.21 Approved Execution Continuation Primitive.
+Ultimo hito: apertura documental de V0.22 Controlled Approval Completion Command.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 177/177 pass.
+Tests actuales: 198/198 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -293,6 +293,26 @@ Contrato V0.21: la operacion devuelve `continued`, `not_found`, `not_continuable
 Invariantes V0.21: Router COST-FIRST intacto; Human Approval Gate intacto; `advisorAuthority` intacto; cero autoridad nueva; no rerouting; no reejecutar Authority Policy; no crear Execution; maximo una provider call; no duplicar Ledger, Authority Audit, Manifest, Timeline ni Audit Index; fail-closed ante evidencia incompleta o ambigua.
 
 Limites V0.21: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel completo, no ejecutar provider calls durante la fase documental.
+
+V0.21: cerrada y congelada.
+
+Commit de cierre V0.21: `1f8c89c8aa29d9e911368127838b6f6933c82b5b`.
+
+Tests de cierre V0.21: 198/198 pass.
+
+V0.22: comienza como fase documental separada.
+
+Titulo V0.22: Controlled Approval Completion Command.
+
+Objetivo V0.22: definir un comando operacional minimo para completar el flujo humano de un run controlado pendiente de aprobacion, componiendo V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion auditable por `runId`.
+
+Problema operacional V0.22: V0.20 resuelve aprobaciones y V0.21 continua ejecuciones aprobadas, pero la operacion real todavia requiere coordinar manualmente dos llamadas separadas para pasar de `live_pending_approval` a resultado final.
+
+Capacidad nueva V0.22: `completeControlledRunApproval(runId, approvalDecision)` recibe una decision humana explicita, delega la resolucion en V0.20 y, solo si la decision es `approved`, delega la continuacion en V0.21. Si la decision es `rejected`, termina sin provider calls.
+
+Contrato V0.22: la operacion devuelve `completed`, `rejected`, `not_found`, `not_completable` o `completion_failed`; conserva `runId`, `executionId` y `effectiveSelection`; no crea nueva Execution; no llama Router COST-FIRST ni Authority Policy; no duplica Manifest, Timeline, Audit Index, Budget Ledger ni Authority Audit.
+
+Limites V0.22: no cambiar Router COST-FIRST, Human Approval Gate, `advisorAuthority`, ProviderAdapter ni Kernel; no agregar autoridad, fallback, retries, dashboard, nueva DB ni nuevos providers; no ejecutar provider calls durante la fase documental.
 
 ## Cierre V0.18
 
@@ -738,27 +758,15 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Implementar V0.21 Approved Execution Continuation Primitive solo despues de aprobar el contrato documental.
-- Exponer `continueApprovedExecution(runId)` para continuar un run aprobado por V0.20.
+- Implementar V0.22 Controlled Approval Completion Command solo despues de aprobar el contrato documental.
+- Exponer `completeControlledRunApproval(runId, approvalDecision)`.
+- Componer explicitamente V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion humana.
 - Conservar `runId`, `executionId` y `effectiveSelection`.
 - No reroutear, no re-evaluar Authority Policy y no crear una nueva Execution.
-- Ejecutar maximo una provider call de continuacion cuando todas las precondiciones sean verificables.
-- Fallar cerrado antes de provider si falta Manifest, approval resuelta, Execution, effectiveSelection o evidencia de no haber llamado provider antes.
-- Registrar Ledger, Manifest y post-auditoria sin duplicados.
-- Implementar V0.20 Controlled Run Status and Approval Resolution API solo despues de aprobar el contrato documental.
-- Exponer `getControlledRunStatus(runId)` sobre Manifest V0.19 sin writes.
-- Exponer `resolveControlledRunApproval(runId, approvalDecision)` solo para `live_pending_approval` con pending approval persistida.
-- Conservar `runId`, `executionId` y `effectiveSelection` durante la resolucion de aprobacion.
-- Evitar rerouting, re-evaluacion de Authority Policy, nuevas invocaciones logicas y provider calls duplicadas.
-- Dejar explicito que V0.20 no implementa continuacion real hasta provider despues de aprobar; esa primitiva pertenece a una version futura.
-- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit y Manifest V0.19 sin duplicar datos ni logica.
-- Implementar V0.19 Controlled Execution Run Manifest solo despues de aprobar el contrato documental.
-- Persistir un manifest append-only e idempotente por `runId` por invocacion de `runControlledExecution(profile)`.
-- Registrar `dry_run`, `profile_rejected`, `live_pending_approval`, `live_completed` y `live_failed` sin depender de que exista siempre una Execution del Kernel.
-- Sanitizar el profile snapshot para no persistir prompts completos ni secretos.
-- Referenciar V0.16 timeline, V0.17 audit summary, Budget Ledger y Authority Audit cuando exista `executionId`, sin duplicar sus datos ni logica.
-- No cambiar Execution del Kernel ni crear executions ficticias para `dry_run` o `profile_rejected`.
-- Mantener provider calls = 0 para `dry_run` y rechazos pre-provider.
+- En `approved`, delegar continuacion a V0.21 solo si V0.20 resolvio aprobacion correctamente.
+- En `rejected`, terminar sin provider calls.
+- Mantener idempotencia por `runId` y evitar segunda provider call, Ledger duplicado o Manifest contradictorio.
+- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit, Manifest V0.19, Approval Resolution V0.20 y Continuation V0.21 sin duplicar datos ni logica.
 - Mantener el reporte read-only y sin autoridad operativa.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
@@ -839,6 +847,14 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.17 declara contrato de Execution Audit Index Read API, listado y consulta de summaries auditables por ejecucion, reutilizacion de V0.16 timeline, `requiresAttention` booleano sin scoring, filtros read-only, orden deterministico y limites sin writes ni autoridad nueva antes de tocar codigo.
 - V0.17 queda validada con dry-run verificable de Execution Audit Index Read API, summary `found`/`not_found`, `timelineDataQuality` preservado, descubrimiento via StateMemory, summaries antes de filtros, `requiresAttention` solo por condiciones explicitas, `limit` al final, orden deterministico, `listExecutions()` read-only, Router COST-FIRST intacto, `advisorAuthority` intacto, cero provider calls reales y 171/171 tests.
 - V0.18 declara contrato de Controlled Operational Execution Profile para lanzar ejecuciones reales de forma controlada, presupuestada y auditable, con modo `dry_run`, modo `live`, validacion previa de presupuesto/criterios, uso del Kernel existente, Human Approval obligatorio cuando aplique, maximo una provider call por attempt, estados operacionales explicitos y post-auditoria mediante V0.16/V0.17 antes de tocar codigo.
+- V0.18 queda validada con dry-run verificable de Controlled Operational Execution Profile, profile validation, dry_run sin provider calls, live delegado al Kernel, Human Approval intacto, post-auditoria V0.16/V0.17 y 177/177 tests.
+- V0.19 declara contrato de Controlled Execution Run Manifest para persistir una invocacion operacional por `runId`, append-only, idempotente, sanitizada y sin executions ficticias para dry_run/rejected.
+- V0.19 queda validada con run manifests para dry_run/profile_rejected/live, idempotencia, append-only, fallos de persistencia, sanitizacion, provider calls controladas y 184/184 tests.
+- V0.20 declara contrato de Controlled Run Status and Approval Resolution API para consultar y resolver aprobaciones por `runId` sin continuar provider.
+- V0.20 queda validada con status `found`/`not_found`, aprobacion/rechazo sin provider calls, fail-closed no resoluble, identidad preservada y 190/190 tests.
+- V0.21 declara contrato de Approved Execution Continuation Primitive para continuar una Execution aprobada conservando `runId`, `executionId` y `effectiveSelection`.
+- V0.21 queda validada con continuacion aprobada, not_found, not_continuable, effectiveSelection persistida, idempotencia, Ledger/Manifest sin duplicados, cero APIs reales y 198/198 tests.
+- V0.22 declara contrato de Controlled Approval Completion Command para componer V0.20 Approval Resolution y V0.21 Approved Execution Continuation en una sola operacion humana, sin nueva autoridad ni logica duplicada.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

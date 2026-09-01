@@ -947,6 +947,52 @@ export type ControlledExecutionContinuationResult =
       reason: string;
     };
 
+export type ControlledApprovalCompletionResult =
+  | {
+      status: "completed";
+      runId: string;
+      executionId: string;
+      effectiveSelection: ShadowAdvisorSelection;
+      provider?: ProviderName;
+      model?: string;
+      estimatedCostUsd?: number | null;
+      actualCostUsd?: number | null;
+      evaluationStatus?: EvaluationStatus;
+      executionStatus: ExecutionStatus;
+      approvalResolution?: ControlledRunApprovalResolutionResult;
+      continuation: ControlledExecutionContinuationResult;
+      reason: string;
+    }
+  | {
+      status: "rejected";
+      runId: string;
+      executionId: string;
+      effectiveSelection?: ShadowAdvisorSelection;
+      approvalResolution: ControlledRunApprovalResolutionResult;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    }
+  | {
+      status: "not_completable";
+      runId: string;
+      executionId?: string;
+      approvalResolution?: ControlledRunApprovalResolutionResult;
+      continuation?: ControlledExecutionContinuationResult;
+      reason: string;
+    }
+  | {
+      status: "completion_failed";
+      runId: string;
+      executionId?: string;
+      approvalResolution?: ControlledRunApprovalResolutionResult;
+      continuation?: ControlledExecutionContinuationResult;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {
