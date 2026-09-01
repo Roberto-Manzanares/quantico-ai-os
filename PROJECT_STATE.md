@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.20 opened.
+Fase: V0.21 opened.
 
-Version objetivo: V0.20.
+Version objetivo: V0.21.
 
-Codigo implementado: no para V0.20.
+Codigo implementado: no para V0.21.
 
-Estado actual: V0.20 documentalmente abierta.
+Estado actual: V0.21 documentalmente abierta.
 
-Ultimo hito: apertura documental de V0.20 Controlled Run Status and Approval Resolution API.
+Ultimo hito: apertura documental de V0.21 Approved Execution Continuation Primitive.
 
 Provider validado V0.1: OpenAI.
 
@@ -275,6 +275,24 @@ Contrato V0.20: `getControlledRunStatus` devuelve `found` si existe manifest y `
 Invariantes V0.20: Router COST-FIRST intacto; `advisorAuthority` intacto; Human Approval Gate intacto; cero autoridad nueva; no rerouting durante resolucion de aprobacion; no reejecutar Authority Policy; no crear executions ficticias; maximo una provider call por execution attempt; `getControlledRunStatus` read-only; `resolveControlledRunApproval` no llama provider ni continua la ejecucion hasta provider; sin prompts completos, API keys, workspace IDs ni secretos.
 
 Limites V0.20: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel, Timeline, Audit Index ni metricas existentes, no duplicar Budget Ledger, Authority Audit ni Manifest V0.19, y no ejecutar provider calls durante la fase documental.
+
+Commit de cierre V0.20: `613d91d1aa4eab49613b1620ef01bc34c835feb1`.
+
+V0.21: comienza como fase documental separada.
+
+Titulo V0.21: Approved Execution Continuation Primitive.
+
+Objetivo V0.21: definir una primitiva operacional minima para continuar una Execution pausada por Human Approval Gate despues de que V0.20 resolvio la aprobacion, conservando el mismo `runId`, `executionId` y `effectiveSelection`.
+
+Problema operacional V0.21: V0.20 resuelve aprobaciones, pero no continua la ejecucion hasta provider porque el Kernel no tiene una primitiva segura para retomar exactamente la misma Execution sin rerouting ni re-evaluacion de Authority Policy.
+
+Capacidad nueva V0.21: `continueApprovedExecution(runId)` permite continuar una Execution aprobada usando la seleccion efectiva ya materializada, con maximo una provider call de continuacion, sin nueva Execution, sin nuevo `runId`, sin fallback ni retries.
+
+Contrato V0.21: la operacion devuelve `continued`, `not_found`, `not_continuable` o `continuation_failed`; exige Manifest V0.19, aprobacion resuelta por V0.20, Execution existente, `effectiveSelection` recuperable, ausencia de pending approval activa y ausencia de provider call previa para ese attempt.
+
+Invariantes V0.21: Router COST-FIRST intacto; Human Approval Gate intacto; `advisorAuthority` intacto; cero autoridad nueva; no rerouting; no reejecutar Authority Policy; no crear Execution; maximo una provider call; no duplicar Ledger, Authority Audit, Manifest, Timeline ni Audit Index; fail-closed ante evidencia incompleta o ambigua.
+
+Limites V0.21: no cambiar Router COST-FIRST, no cambiar `advisorAuthority`, no ampliar autoridad, no agregar fallback, retries, dashboard, nueva DB ni nuevos providers, no modificar ProviderAdapter, no reimplementar Kernel completo, no ejecutar provider calls durante la fase documental.
 
 ## Cierre V0.18
 
@@ -720,6 +738,13 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
+- Implementar V0.21 Approved Execution Continuation Primitive solo despues de aprobar el contrato documental.
+- Exponer `continueApprovedExecution(runId)` para continuar un run aprobado por V0.20.
+- Conservar `runId`, `executionId` y `effectiveSelection`.
+- No reroutear, no re-evaluar Authority Policy y no crear una nueva Execution.
+- Ejecutar maximo una provider call de continuacion cuando todas las precondiciones sean verificables.
+- Fallar cerrado antes de provider si falta Manifest, approval resuelta, Execution, effectiveSelection o evidencia de no haber llamado provider antes.
+- Registrar Ledger, Manifest y post-auditoria sin duplicados.
 - Implementar V0.20 Controlled Run Status and Approval Resolution API solo despues de aprobar el contrato documental.
 - Exponer `getControlledRunStatus(runId)` sobre Manifest V0.19 sin writes.
 - Exponer `resolveControlledRunApproval(runId, approvalDecision)` solo para `live_pending_approval` con pending approval persistida.

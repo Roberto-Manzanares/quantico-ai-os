@@ -908,6 +908,45 @@ export type ControlledRunApprovalResolutionResult =
       reason: string;
     };
 
+export type ControlledExecutionContinuationResult =
+  | {
+      status: "continued";
+      runId: string;
+      executionId: string;
+      executionStatus: ExecutionStatus;
+      effectiveSelection: ShadowAdvisorSelection;
+      provider?: ProviderName;
+      model?: string;
+      estimatedCostUsd?: number | null;
+      actualCostUsd?: number | null;
+      evaluationStatus?: EvaluationStatus;
+      postAudit?: ControlledExecutionPostAudit;
+      manifestRecordingStatus?: ControlledExecutionManifestRecordingStatus;
+      manifest?: ControlledExecutionRunManifestSnapshot;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    }
+  | {
+      status: "not_continuable";
+      runId: string;
+      executionId?: string;
+      runStatus?: ControlledRunStatusReadResult;
+      reason: string;
+    }
+  | {
+      status: "continuation_failed";
+      runId: string;
+      executionId?: string;
+      effectiveSelection?: ShadowAdvisorSelection;
+      manifestRecordingStatus?: ControlledExecutionManifestRecordingStatus;
+      manifest?: ControlledExecutionRunManifestSnapshot;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

@@ -11,7 +11,8 @@ import type {
   ShadowAdvisorSelection,
   ShadowRoutingAdvice,
   ShadowRoutingAnalysisReport,
-  TaskType
+  TaskType,
+  TokenDecision
 } from "./types.js";
 import type { AuthorityDecisionAuditLog } from "./components/authority-decision-audit-log.js";
 import type { ContextCompiler } from "./components/context-compiler.js";
@@ -61,6 +62,144 @@ export interface OrchestrationResult {
 
 export class Orchestrator {
   constructor(private readonly dependencies: OrchestratorDependencies) {}
+
+  async continueApprovedExecution(input: {
+    executionId: string;
+    effectiveSelection: ShadowAdvisorSelection;
+    tokenDecision: TokenDecision;
+  }): Promise<OrchestrationResult> {
+    const execution = await this.dependencies.stateMemory.getExecution(input.executionId);
+
+    if (!execution) {
+      throw new Error(`Execution not found for approved continuation: ${input.executionId}.`);
+    }
+
+    const context = await this.dependencies.contextCompiler.compile({
+      goal: execution.goal,
+      projectId: execution.projectId,
+      constraints: execution.constraints,
+      approvalPolicy: execution.approvalPolicy,
+      maxContextTokens: execution.constraints.maxInputTokens,
+      stateMemory: this.dependencies.stateMemory
+    });
+    await this.appendEvent(execution, "context_compiled_for_approved_continuation", {
+      compiledContextId: context.compiledContextId,
+      estimatedTokens: context.estimatedTokens,
+      sourceRefs: context.sourceRefs,
+      omittedContext: context.omittedContext
+    });
+
+    const effectiveRoutingDecision: RoutingDecision = {
+      provider: input.effectiveSelection.provider,
+      model: input.effectiveSelection.model,
+      taskType: execution.taskType,
+      reason: input.effectiveSelection.reason,
+      estimatedCostUsd: input.effectiveSelection.estimatedCostUsd,
+      estimatedLatencyClass: "unknown"
+    };
+    await this.appendEvent(execution, "approved_continuation_selection_recovered", {
+      effectiveSelection: input.effectiveSelection
+    });
+
+    const provider = this.dependencies.providers[effectiveRoutingDecision.provider];
+
+    if (!provider) {
+      execution.status = "failed";
+      execution.error = {
+        code: "provider_unavailable",
+        message: `Provider adapter is not configured: ${effectiveRoutingDecision.provider}.`
+      };
+      execution.updatedAt = new Date();
+      await this.dependencies.stateMemory.saveExecution(execution);
+      await this.appendEvent(execution, "provider_error", execution.error);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision: effectiveRoutingDecision,
+        tokenDecision: input.tokenDecision,
+        providerCalled: false
+      });
+      const evaluation = await this.evaluateAndPersist(execution);
+      return { execution, evaluation };
+    }
+
+    let modelCall: ModelCallResult;
+
+    try {
+      modelCall = await this.withStatus(execution, "running", () =>
+        provider.sendMessage({
+          executionId: execution.id,
+          model: effectiveRoutingDecision.model,
+          messages: context.messages,
+          maxOutputTokens: execution.constraints.maxOutputTokens
+        })
+      );
+    } catch (error) {
+      const normalizedError = normalizeProviderError(error);
+      execution.status = "failed";
+      execution.error = normalizedError;
+      execution.updatedAt = new Date();
+      await this.dependencies.stateMemory.saveExecution(execution);
+      await this.appendEvent(execution, "provider_error", normalizedError);
+      await this.recordBudgetLedger({
+        execution,
+        routingDecision: effectiveRoutingDecision,
+        tokenDecision: input.tokenDecision,
+        providerCalled: didReachProvider(error)
+      });
+      const evaluation = await this.evaluateAndPersist(execution);
+      return { execution, evaluation };
+    }
+
+    const budgetLedgerEntry = await this.dependencies.budgetLedger.record({
+      executionId: execution.id,
+      projectId: execution.projectId,
+      routingDecision: effectiveRoutingDecision,
+      tokenDecision: input.tokenDecision,
+      modelCall,
+      providerCalled: true
+    });
+    execution.finalResult = modelCall.content;
+    execution.metrics = {
+      inputTokens: modelCall.inputTokens,
+      outputTokens: modelCall.outputTokens,
+      estimatedCostUsd: input.tokenDecision.estimatedCostUsd ?? 0,
+      actualCostUsd: budgetLedgerEntry.actualCostUsd,
+      costDeltaUsd: budgetLedgerEntry.costDeltaUsd,
+      latencyMs: modelCall.latencyMs
+    };
+    execution.updatedAt = new Date();
+    await this.dependencies.stateMemory.saveExecution(execution);
+    await this.appendEvent(execution, "model_called", {
+      provider: modelCall.provider,
+      model: modelCall.model,
+      inputTokens: modelCall.inputTokens,
+      outputTokens: modelCall.outputTokens,
+      estimatedCostUsd: execution.metrics.estimatedCostUsd,
+      actualCostUsd: budgetLedgerEntry.actualCostUsd,
+      costDeltaUsd: budgetLedgerEntry.costDeltaUsd,
+      latencyMs: modelCall.latencyMs
+    });
+    await this.appendEvent(execution, "budget_ledger_recorded", { budgetLedgerEntry });
+
+    const evaluation = await this.evaluateAndPersist(execution);
+
+    if (evaluation.status === "pass") {
+      execution.status = "succeeded";
+    } else if (evaluation.status === "needs_review") {
+      execution.status = "needs_human";
+    } else {
+      execution.status = "failed";
+    }
+    execution.evaluation = evaluation;
+    execution.updatedAt = new Date();
+    await this.dependencies.stateMemory.saveExecution(execution);
+    await this.appendEvent(execution, "execution_completed", {
+      status: execution.status,
+      evaluation: evaluation.status
+    });
+
+    return { execution, evaluation };
+  }
 
   async run(request: ExecutionRequest): Promise<OrchestrationResult> {
     const now = new Date();

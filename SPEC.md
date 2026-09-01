@@ -2301,6 +2301,170 @@ Cada execution attempt mantiene maximo una provider call. No hay retries ni fall
 - No se agregan dashboards, billing, nuevos providers, ML ni nueva DB.
 - No se exponen prompts completos, API keys, workspace IDs ni secretos.
 
+## Apertura V0.21
+
+Titulo: V0.21 - Approved Execution Continuation Primitive.
+
+Estado de V0.20: cerrada y congelada.
+
+Commit de cierre V0.20: `613d91d1aa4eab49613b1620ef01bc34c835feb1`.
+
+V0.21 comienza como fase documental separada.
+
+### Objetivo V0.21
+
+Definir una primitiva operacional minima para continuar una Execution que quedo pausada por Human Approval Gate, despues de que V0.20 resolvio la aprobacion, conservando la misma `executionId`, `runId` y `effectiveSelection`.
+
+### Problema Operacional
+
+V0.20 resuelve la aprobacion humana de forma segura, pero no continua la ejecucion hasta provider porque el Kernel no expone una primitiva reutilizable para retomar exactamente la misma Execution sin reejecutar Router COST-FIRST, Authority Policy o presupuesto.
+
+V0.21 cierra esa brecha a nivel contractual: define como debe existir una continuacion post-approval sin crear una nueva Execution, sin nueva invocacion logica y sin duplicar Kernel, Manifest, Timeline, Audit Index, Ledger ni Authority Audit.
+
+### Capacidad Nueva
+
+V0.21 habilita:
+
+- Continuar una Execution previamente pausada por aprobacion humana.
+- Usar la misma `effectiveSelection` materializada antes de la pausa.
+- Evitar rerouting, nueva Authority Policy y nueva evaluacion de presupuesto acumulado no autorizada.
+- Ejecutar como maximo una provider call correspondiente a la continuacion aprobada.
+- Registrar el resultado en Budget Ledger, Authority Audit references, Timeline V0.16, Audit Index V0.17 y Manifest V0.19 sin duplicar entradas.
+
+### Superficie V0.21
+
+Operacion minima futura:
+
+- `continueApprovedExecution(runId)`.
+
+La operacion recibe `runId` porque la identidad operacional externa de V0.19/V0.20 es el run, no necesariamente el `executionId`.
+
+### Precondiciones
+
+`continueApprovedExecution(runId)` solo puede avanzar si:
+
+- Existe Manifest V0.19 para `runId`.
+- El latest lifecycle del manifest es `live_pending_approval`.
+- Existe `executionId` enlazado.
+- La pending approval ya fue resuelta como `approved` por V0.20.
+- No existe pending approval activa para esa `executionId`.
+- La Execution persistida existe y esta en estado recuperable post-aprobacion.
+- La `effectiveSelection` original puede recuperarse desde evidencia persistida.
+- No existe provider call previa para ese execution attempt.
+- Los budgets y Token Governor aplicables ya fueron aprobados antes de la pausa y sus decisiones son auditables.
+
+Si cualquier precondicion falta o queda ambigua, la operacion debe fallar cerrado antes de provider.
+
+### Contrato De Continuacion
+
+`continueApprovedExecution(runId)` debe devolver:
+
+- `continued`: provider ejecutado una vez y Execution finalizada por Evaluator.
+- `not_found`: no existe run.
+- `not_continuable`: el run existe pero no cumple precondiciones.
+- `continuation_failed`: fallo controlado durante la continuacion.
+
+Respuesta `continued` debe incluir:
+
+- `runId`.
+- `executionId`.
+- `provider`.
+- `model`.
+- `effectiveSelection`.
+- `inputTokens`.
+- `outputTokens`.
+- `estimatedCostUsd`.
+- `actualCostUsd` cuando exista.
+- `latencyMs`.
+- `evaluationStatus`.
+- `executionStatus`.
+- `manifestRecordingStatus`.
+- referencias auditables a Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit.
+- `reason`.
+
+### Flujo V0.21
+
+1. Recibir `runId`.
+2. Leer Manifest V0.19 como fuente primaria del run.
+3. Confirmar que V0.20 resolvio aprobacion como `approved`.
+4. Recuperar Execution existente.
+5. Recuperar `effectiveSelection` ya materializada antes de la pausa.
+6. No llamar Router COST-FIRST.
+7. No llamar Authority Policy.
+8. No crear nueva Execution.
+9. Confirmar que no hay provider call previa para el attempt.
+10. Ejecutar una sola provider call con la `effectiveSelection` existente.
+11. Ejecutar Evaluator existente.
+12. Registrar Budget Ledger usando usage real.
+13. Actualizar Execution existente.
+14. Registrar evento de Manifest V0.19 como `live_completed` o `live_failed`.
+15. Reutilizar Timeline V0.16 y Audit Index V0.17 para post-auditoria.
+
+### Invariantes De Seguridad
+
+- Router COST-FIRST permanece intacto.
+- `advisorAuthority` permanece intacto.
+- Human Approval Gate permanece intacto.
+- No se agrega autoridad nueva.
+- No se modifica ProviderAdapter.
+- No se crea nueva Execution.
+- No se crea nuevo `runId`.
+- No se reevalua Authority Policy.
+- No se reroutea.
+- No hay fallback.
+- No hay retries.
+- Maximo una provider call para la continuacion aprobada.
+- Rechazos, ambiguedades o evidencia incompleta fallan cerrado antes de provider.
+- No se duplican entradas de Budget Ledger ni Authority Audit.
+- No se persisten prompts completos, API keys, workspace IDs ni secretos.
+
+### Limites V0.21
+
+- No cambiar Router COST-FIRST.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No reimplementar Kernel completo.
+- No duplicar V0.16 Timeline.
+- No duplicar V0.17 Audit Index.
+- No duplicar V0.19 Manifest.
+- No duplicar V0.20 Approval Resolution.
+- No agregar nuevos providers.
+- No ejecutar provider calls durante la fase documental.
+
+### Casos Limite V0.21
+
+- `runId` inexistente: `not_found`.
+- Run no esta en `live_pending_approval`: `not_continuable`.
+- Pending approval sigue activa: `not_continuable`.
+- Aprobacion fue rechazada: `not_continuable`.
+- Falta `executionId`: `not_continuable`.
+- Falta `effectiveSelection`: `not_continuable`.
+- Execution no existe: `not_continuable`.
+- Ya existe provider call para el attempt: `not_continuable`.
+- Provider falla: `continuation_failed` con error normalizado y trazabilidad.
+- Evaluator devuelve `fail` o `needs_review`: Execution refleja estado final correspondiente.
+- Falla al registrar Manifest despues de provider: no retry, no segunda provider call, y fallo auditable.
+- Datos sensibles en Execution o manifest: no se exponen.
+
+### Criterios De Aceptacion V0.21
+
+- Existe contrato documental para `continueApprovedExecution(runId)`.
+- La continuacion solo puede partir de un run V0.19 con aprobacion resuelta por V0.20.
+- La operacion conserva `runId`, `executionId` y `effectiveSelection`.
+- La operacion no crea nueva Execution.
+- La operacion no llama Router COST-FIRST ni Authority Policy.
+- La operacion no ejecuta provider si faltan precondiciones.
+- La operacion ejecuta maximo una provider call cuando procede.
+- La operacion registra resultado, metricas, Budget Ledger y Manifest sin duplicados.
+- Timeline V0.16 y Audit Index V0.17 se reutilizan para post-auditoria.
+- Router COST-FIRST, Human Approval Gate, `advisorAuthority` y ProviderAdapter permanecen intactos.
+- No hay fallback, retries, nueva autoridad, dashboard ni nueva DB.
+
 ## Apertura V0.20
 
 Titulo: V0.20 - Controlled Run Status and Approval Resolution API.

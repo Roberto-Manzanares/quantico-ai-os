@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   ControlledExecutionAuditRequirements,
+  BudgetLedgerEntry,
+  ControlledExecutionContinuationResult,
   ControlledExecutionManifestRecordingStatus,
   ControlledExecutionProfile,
   ControlledExecutionResult,
@@ -14,9 +16,11 @@ import type {
   ControlledRunStatusDataQuality,
   ControlledRunStatusReadResult,
   EvaluationCriterion,
+  ExecutionEvent,
   ExecutionConstraints,
   ExecutionStatus,
-  ShadowAdvisorSelection
+  ShadowAdvisorSelection,
+  TokenDecision
 } from "../types.js";
 import type { ContextCompiler } from "./context-compiler.js";
 import type { ExecutionAuditIndexV017 } from "./execution-audit-index.js";
@@ -171,6 +175,206 @@ export class ControlledOperationalExecutionV018 {
         reason: error instanceof Error ? error.message : "Controlled run approval resolution failed."
       };
     }
+  }
+
+  async continueApprovedExecution(runId: string): Promise<ControlledExecutionContinuationResult> {
+    const runStatus = await this.getControlledRunStatus(runId);
+
+    if (runStatus.status === "not_found") {
+      return {
+        status: "not_found",
+        runId,
+        reason: runStatus.reason
+      };
+    }
+
+    const manifestEvents = await this.dependencies.stateMemory.listControlledExecutionRunManifestEvents(runId);
+    const manifestSnapshot = latestManifestSnapshot(manifestEvents);
+    const profileSnapshot = manifestSnapshot?.latestEvent.profileSnapshot;
+
+    if (!profileSnapshot) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} has no recoverable manifest profile snapshot.`);
+    }
+
+    if (runStatus.lifecycleStatus === "live_completed") {
+      return this.continuationFromCompletedManifest(runStatus);
+    }
+
+    if (runStatus.lifecycleStatus !== "live_pending_approval" || !runStatus.executionId) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} is not in live_pending_approval lifecycle.`);
+    }
+
+    const execution = await this.dependencies.stateMemory.getExecution(runStatus.executionId);
+
+    if (!execution) {
+      return notContinuable(runId, runStatus, `Execution not found for controlled run ${runId}.`);
+    }
+
+    const pendingApproval = await this.dependencies.stateMemory.getPendingApprovalStep(runStatus.executionId);
+
+    if (pendingApproval) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} still has an active pending approval.`);
+    }
+
+    const events = await this.dependencies.stateMemory.listEvents(runStatus.executionId);
+
+    if (!hasApprovedResolution(events)) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} has no approved V0.20 approval resolution.`);
+    }
+
+    if (hasProviderCallEvidence(events, await this.dependencies.stateMemory.listBudgetLedgerEntries(runStatus.executionId))) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} already has provider call evidence for this continuation.`);
+    }
+
+    const effectiveSelection = recoverEffectiveSelection(events);
+
+    if (!effectiveSelection) {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} has no recoverable effectiveSelection.`);
+    }
+
+    const tokenDecision = recoverTokenDecision(events);
+
+    if (!tokenDecision || tokenDecision.status !== "allow") {
+      return notContinuable(runId, runStatus, `Controlled run ${runId} has no recoverable allowed Token Governor decision.`);
+    }
+
+    try {
+      const orchestration = await this.dependencies.orchestrator.continueApprovedExecution({
+        executionId: runStatus.executionId,
+        effectiveSelection,
+        tokenDecision
+      });
+      const ledgerEntries = await this.dependencies.stateMemory.listBudgetLedgerEntries(
+        orchestration.execution.id
+      );
+      const providerLedgerEntry = ledgerEntries.find((entry) => entry.calculationStatus !== "not_applicable");
+      const postAudit = await this.postAudit(orchestration.execution.id, {
+        requireTimeline: true,
+        requireAuditSummary: true
+      });
+      const controlledResult: ControlledExecutionResult = {
+        status: liveStatus(orchestration.execution.status),
+        profileValidationStatus: "profile_validated",
+        runId,
+        profileId: profileSnapshot.profileId,
+        executionId: orchestration.execution.id,
+        provider: providerLedgerEntry?.provider ?? effectiveSelection.provider,
+        model: providerLedgerEntry?.model ?? effectiveSelection.model,
+        estimatedCostUsd: orchestration.execution.metrics.estimatedCostUsd,
+        actualCostUsd: orchestration.execution.metrics.actualCostUsd,
+        evaluationStatus: orchestration.evaluation.status,
+        postAudit,
+        reason: `Approved execution continuation finished with execution status ${orchestration.execution.status}.`
+      };
+      const recorded = await this.recordTransition(
+        profileSnapshot,
+        controlledResult,
+        liveLifecycleStatus(controlledResult.status)
+      );
+
+      if (recorded.manifestRecordingStatus === "manifest_record_failed") {
+        return {
+          status: "continuation_failed",
+          runId,
+          executionId: orchestration.execution.id,
+          effectiveSelection,
+          manifestRecordingStatus: recorded.manifestRecordingStatus,
+          manifest: recorded.manifest,
+          reason: recorded.reason
+        };
+      }
+
+      if (orchestration.execution.status !== "succeeded") {
+        return {
+          status: "continuation_failed",
+          runId,
+          executionId: orchestration.execution.id,
+          effectiveSelection,
+          manifestRecordingStatus: recorded.manifestRecordingStatus,
+          manifest: recorded.manifest,
+          reason: `Approved execution continuation ended with execution status ${orchestration.execution.status}.`
+        };
+      }
+
+      return {
+        status: "continued",
+        runId,
+        executionId: orchestration.execution.id,
+        executionStatus: orchestration.execution.status,
+        effectiveSelection,
+        provider: controlledResult.provider,
+        model: controlledResult.model,
+        estimatedCostUsd: controlledResult.estimatedCostUsd,
+        actualCostUsd: controlledResult.actualCostUsd,
+        evaluationStatus: orchestration.evaluation.status,
+        postAudit,
+        manifestRecordingStatus: recorded.manifestRecordingStatus,
+        manifest: recorded.manifest,
+        reason: "Approved execution continued without rerouting, authority reevaluation, or a new Execution."
+      };
+    } catch (error) {
+      return {
+        status: "continuation_failed",
+        runId,
+        executionId: runStatus.executionId,
+        effectiveSelection,
+        reason: error instanceof Error ? error.message : "Approved execution continuation failed."
+      };
+    }
+  }
+
+  private async continuationFromCompletedManifest(
+    runStatus: Extract<ControlledRunStatusReadResult, { status: "found" }>
+  ): Promise<ControlledExecutionContinuationResult> {
+    const executionId = runStatus.executionId;
+
+    if (!executionId) {
+      return {
+        status: "not_continuable",
+        runId: runStatus.runId,
+        runStatus,
+        reason: `Controlled run ${runStatus.runId} has completed manifest lifecycle without executionId.`
+      };
+    }
+
+    const events = await this.dependencies.stateMemory.listEvents(executionId);
+    const effectiveSelection = recoverEffectiveSelection(events) ?? runStatus.effectiveSelection;
+
+    if (!effectiveSelection) {
+      return {
+        status: "not_continuable",
+        runId: runStatus.runId,
+        executionId,
+        runStatus,
+        reason: `Controlled run ${runStatus.runId} has completed lifecycle but no recoverable effectiveSelection.`
+      };
+    }
+
+    const execution = await this.dependencies.stateMemory.getExecution(executionId);
+
+    if (!execution) {
+      return {
+        status: "not_continuable",
+        runId: runStatus.runId,
+        executionId,
+        runStatus,
+        reason: `Execution not found for completed controlled run ${runStatus.runId}.`
+      };
+    }
+
+    return {
+      status: "continued",
+      runId: runStatus.runId,
+      executionId,
+      executionStatus: execution.status,
+      effectiveSelection,
+      provider: runStatus.provider,
+      model: runStatus.model,
+      estimatedCostUsd: runStatus.estimatedCostUsd,
+      actualCostUsd: runStatus.actualCostUsd,
+      evaluationStatus: runStatus.evaluationStatus,
+      reason: `Idempotent approved continuation replayed from manifest lifecycle ${runStatus.lifecycleStatus}.`
+    };
   }
 
   private async resolveIdempotency(input: {
@@ -602,6 +806,100 @@ function manifestFailedResult(
     reason: `Manifest recording failed before provider call: ${reason}`,
     manifestRecordingStatus: "manifest_record_failed"
   };
+}
+
+function notContinuable(
+  runId: string,
+  runStatus: Extract<ControlledRunStatusReadResult, { status: "found" }>,
+  reason: string
+): ControlledExecutionContinuationResult {
+  return {
+    status: "not_continuable",
+    runId,
+    executionId: runStatus.executionId,
+    runStatus,
+    reason
+  };
+}
+
+function hasApprovedResolution(events: ExecutionEvent[]): boolean {
+  return events.some(
+    (event) => event.type === "approval_decision" && event.decisionApplied === "approved"
+  );
+}
+
+function hasProviderCallEvidence(
+  events: ExecutionEvent[],
+  ledgerEntries: BudgetLedgerEntry[]
+): boolean {
+  return (
+    events.some((event) => event.type === "model_called" || event.type === "provider_error") ||
+    ledgerEntries.some((entry) => entry.calculationStatus !== "not_applicable")
+  );
+}
+
+function recoverEffectiveSelection(events: ExecutionEvent[]): ShadowAdvisorSelection | undefined {
+  for (const event of [...events].reverse()) {
+    const direct = maybeSelection((event.payload as Record<string, unknown>)["effectiveSelection"]);
+
+    if (direct) {
+      return direct;
+    }
+
+    const metadata = (event.payload as Record<string, unknown>)["metadata"];
+
+    if (metadata && typeof metadata === "object") {
+      const nested = maybeSelection((metadata as Record<string, unknown>)["effectiveSelection"]);
+
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function maybeSelection(value: unknown): ShadowAdvisorSelection | undefined {
+  if (
+    value &&
+    typeof value === "object" &&
+    "provider" in value &&
+    "model" in value &&
+    typeof (value as { provider?: unknown }).provider === "string" &&
+    typeof (value as { model?: unknown }).model === "string"
+  ) {
+    return value as ShadowAdvisorSelection;
+  }
+
+  return undefined;
+}
+
+function recoverTokenDecision(events: ExecutionEvent[]): TokenDecision | undefined {
+  for (const event of [...events].reverse()) {
+    const tokenDecision = (event.payload as Record<string, unknown>)["tokenDecision"];
+
+    if (isTokenDecision(tokenDecision)) {
+      return tokenDecision;
+    }
+  }
+
+  return undefined;
+}
+
+function isTokenDecision(value: unknown): value is TokenDecision {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    ((value as { status?: unknown }).status === "allow" ||
+      (value as { status?: unknown }).status === "reject") &&
+    typeof (value as { estimatedInputTokens?: unknown }).estimatedInputTokens === "number" &&
+    typeof (value as { estimatedOutputTokens?: unknown }).estimatedOutputTokens === "number" &&
+    typeof (value as { estimatedTotalTokens?: unknown }).estimatedTotalTokens === "number" &&
+    (typeof (value as { estimatedCostUsd?: unknown }).estimatedCostUsd === "number" ||
+      (value as { estimatedCostUsd?: unknown }).estimatedCostUsd === null) &&
+    typeof (value as { reason?: unknown }).reason === "string"
+  );
 }
 
 function liveStatus(status: ExecutionStatus): ControlledExecutionResult["status"] {

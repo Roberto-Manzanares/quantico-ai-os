@@ -693,6 +693,282 @@ test("V0.20 API exposes controlled run status and approval resolution", async ()
   }
 });
 
+test("V0.21 continues an approved execution without rerouting or creating a new Execution", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_continue",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const beforeApproval = await system.controlledOperationalExecution.getControlledRunStatus(
+      pending.runId ?? ""
+    );
+    const expectedSelection =
+      beforeApproval.status === "found" ? beforeApproval.effectiveSelection : undefined;
+
+    await system.controlledOperationalExecution.resolveControlledRunApproval(pending.runId ?? "", {
+      decision: "approved",
+      reason: "approved for V0.21 continuation"
+    });
+    const continued = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+    const executions = await system.stateMemory.listExecutions();
+    const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(pending.executionId);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(continued.status, "continued");
+    assert.equal(continued.status === "continued" ? continued.runId : undefined, pending.runId);
+    assert.equal(continued.status === "continued" ? continued.executionId : undefined, pending.executionId);
+    assert.deepEqual(
+      continued.status === "continued" ? continued.effectiveSelection : undefined,
+      expectedSelection
+    );
+    assert.equal((await system.stateMemory.getExecution(pending.executionId ?? ""))?.status, "succeeded");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(executions.length, 1);
+    assert.equal(ledgerEntries.length, 1);
+    assert.equal(manifestEvents.length, 3);
+    assert.deepEqual(
+      manifestEvents.map((event) => event.lifecycleStatus),
+      ["run_created", "live_pending_approval", "live_completed"]
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 continueApprovedExecution returns not_found without provider calls", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const result = await system.controlledOperationalExecution.continueApprovedExecution(
+      "run_v021_missing"
+    );
+
+    assert.equal(result.status, "not_found");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 unresolved approval is not continuable and does not call provider", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_unresolved",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+
+    assert.equal(result.status, "not_continuable");
+    assert.match(result.reason, /active pending approval/);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 pending approval evidence must be resolved as approved", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_missing_approval_resolution",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await system.stateMemory.clearPendingApprovalStep(pending.executionId ?? "");
+    const result = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+
+    assert.equal(result.status, "not_continuable");
+    assert.match(result.reason, /no approved V0\.20 approval resolution/);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 missing effectiveSelection fails closed before provider", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const stateMemory = new MissingEffectiveSelectionStateMemory(stateFilePath);
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+  const controlled = new ControlledOperationalExecutionV018({
+    stateMemory,
+    contextCompiler: system.contextCompiler,
+    modelRouter: system.modelRouter,
+    tokenGovernor: system.tokenGovernor,
+    orchestrator: system.orchestrator,
+    executionAuditTimeline: system.executionAuditTimeline,
+    executionAuditIndex: system.executionAuditIndex,
+    humanApprovalGate: system.humanApprovalGate
+  });
+
+  try {
+    const pending = await controlled.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_no_selection",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await controlled.resolveControlledRunApproval(pending.runId ?? "", { decision: "approved" });
+    const result = await controlled.continueApprovedExecution(pending.runId ?? "");
+
+    assert.equal(result.status, "not_continuable");
+    assert.match(result.reason, /no recoverable effectiveSelection/);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 prior provider call evidence blocks continuation before another call", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_prior_provider_call",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await system.controlledOperationalExecution.resolveControlledRunApproval(pending.runId ?? "", {
+      decision: "approved"
+    });
+    await system.stateMemory.appendEvent({
+      id: "event_v021_prior_model_called",
+      executionId: pending.executionId ?? "",
+      type: "model_called",
+      payload: { provider: "openai", model: "v018-openai-cheap" },
+      createdAt: new Date()
+    });
+    const result = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+
+    assert.equal(result.status, "not_continuable");
+    assert.match(result.reason, /already has provider call evidence/);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 continuation is idempotent after completion and does not duplicate provider, ledger, or manifest", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v021_idempotent",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    await system.controlledOperationalExecution.resolveControlledRunApproval(pending.runId ?? "", {
+      decision: "approved"
+    });
+    const first = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+    const second = await system.controlledOperationalExecution.continueApprovedExecution(
+      pending.runId ?? ""
+    );
+    const ledgerEntries = await system.stateMemory.listBudgetLedgerEntries(pending.executionId);
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(first.status, "continued");
+    assert.equal(second.status, "continued");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(ledgerEntries.length, 1);
+    assert.equal(manifestEvents.length, 3);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.21 API exposes approved execution continuation", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const api = createQuanticoApi({ stateFilePath });
+
+  try {
+    const result = await api.continueApprovedExecution("run_v021_api_missing");
+
+    assert.equal(result.status, "not_found");
+  } finally {
+    await cleanup();
+  }
+});
+
 function profile(
   overrides: Partial<ControlledExecutionProfile> = {}
 ): ControlledExecutionProfile {
@@ -771,6 +1047,18 @@ class FailingManifestStateMemory extends FileStateMemory {
     }
 
     await super.saveControlledExecutionRunManifestEvent(event);
+  }
+}
+
+class MissingEffectiveSelectionStateMemory extends FileStateMemory {
+  override async listEvents(executionId: string) {
+    const events = await super.listEvents(executionId);
+
+    return events.filter(
+      (event) =>
+        event.type !== "effective_selection_determined" &&
+        event.type !== "approval_evaluated"
+    );
   }
 }
 
