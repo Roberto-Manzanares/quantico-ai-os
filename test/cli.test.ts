@@ -268,3 +268,90 @@ test("CLI controlled-status rejects invalid arguments before API use", async () 
   assert.equal(apiCalled, false);
   assert.match(errors.join("\n"), /Unknown controlled-status option/);
 });
+
+test("CLI execution-timeline reads an audit timeline", async () => {
+  const output: string[] = [];
+  let receivedExecutionId: string | undefined;
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async getExecutionAuditTimeline(executionId: string) {
+      receivedExecutionId = executionId;
+
+      return {
+        status: "found",
+        executionId,
+        executionStatus: "succeeded",
+        dataQuality: "complete",
+        timeline: [
+          {
+            timestamp: new Date("2026-08-31T12:00:00.000Z"),
+            source: "execution",
+            type: "execution_created",
+            summary: "Execution was created.",
+            details: { provider: "openai", model: "gpt-5-nano", inputTokens: 127 }
+          }
+        ],
+        reason: "Timeline has complete and consistent persisted evidence."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-timeline", "exec_cli_timeline", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const timeline = payload["timeline"] as Array<Record<string, unknown>>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedExecutionId, "exec_cli_timeline");
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["executionId"], "exec_cli_timeline");
+  assert.equal(payload["executionStatus"], "succeeded");
+  assert.equal(payload["dataQuality"], "complete");
+  assert.equal(timeline.length, 1);
+  assert.equal(timeline[0]?.["source"], "execution");
+  assert.equal(timeline[0]?.["timestamp"], "2026-08-31T12:00:00.000Z");
+});
+
+test("CLI execution-timeline returns non-zero when execution is missing", async () => {
+  const output: string[] = [];
+  const api = {
+    async getExecutionAuditTimeline(executionId: string) {
+      return {
+        status: "not_found",
+        executionId,
+        reason: `Execution ${executionId} was not found.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-timeline", "exec_cli_missing"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["executionId"], "exec_cli_missing");
+  assert.match(String(payload["reason"]), /not found/);
+});
+
+test("CLI execution-timeline rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["execution-timeline", "exec_cli_timeline", "--bad"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Unknown execution-timeline option/);
+});
