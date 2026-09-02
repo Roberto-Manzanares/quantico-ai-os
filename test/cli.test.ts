@@ -570,6 +570,93 @@ test("CLI execution-summary rejects invalid arguments before API use", async () 
   assert.match(errors.join("\n"), /Unknown execution-summary option/);
 });
 
+test("CLI execution-result reads result and metrics", async () => {
+  const output: string[] = [];
+  let receivedExecutionId: string | undefined;
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async getResultAndMetrics(executionId: string) {
+      receivedExecutionId = executionId;
+
+      return {
+        executionId,
+        status: "succeeded",
+        finalResult: "QUANTICO_RESULT_OK",
+        evaluation: {
+          status: "pass",
+          reason: "Deterministic criteria passed.",
+          criteria: [{ type: "contains_text", passed: true }],
+          recommendedNextAction: undefined
+        },
+        metrics: {
+          provider: "openai",
+          model: "gpt-5-nano",
+          inputTokens: 127,
+          outputTokens: 24,
+          estimatedCostUsd: 0.000018,
+          actualCostUsd: 0.000016,
+          latencyMs: 2240
+        }
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-result", "exec_cli_result", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const metrics = payload["metrics"] as Record<string, unknown>;
+  const evaluation = payload["evaluation"] as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedExecutionId, "exec_cli_result");
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["executionId"], "exec_cli_result");
+  assert.equal(payload["executionStatus"], "succeeded");
+  assert.equal(payload["finalResult"], "QUANTICO_RESULT_OK");
+  assert.equal(metrics["provider"], "openai");
+  assert.equal(metrics["inputTokens"], 127);
+  assert.equal(evaluation["status"], "pass");
+});
+
+test("CLI execution-result returns non-zero when execution is missing", async () => {
+  const output: string[] = [];
+  const api = {
+    async getResultAndMetrics() {
+      return undefined;
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-result", "exec_cli_missing"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["executionId"], "exec_cli_missing");
+});
+
+test("CLI execution-result rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["execution-result", "exec_cli_result", "--bad"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Unknown execution-result option/);
+});
+
 test("CLI provider-scorecards lists all scorecards", async () => {
   const output: string[] = [];
   let receivedStateFilePath: string | undefined;
