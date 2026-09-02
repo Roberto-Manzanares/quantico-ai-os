@@ -8,6 +8,7 @@ import type {
   ControlledApprovalCompletionResult,
   ControlledRunApprovalDecision,
   ControlledRunApprovalResolutionResult,
+  ControlledRunClosureResult,
   ControlledRunFinalizationResult,
   ControlledRunStatusReadResult,
   ControlledExecutionContinuationResult,
@@ -57,6 +58,10 @@ export interface QuanticoApi {
     approvalDecision: { decision: ControlledRunApprovalDecision; reason?: string }
   ): Promise<ControlledApprovalCompletionResult>;
   finalizeControlledRun(runId: string): Promise<ControlledRunFinalizationResult>;
+  closeControlledRun(
+    runId: string,
+    options?: { approvalDecision?: ControlledRunApprovalDecision; reason?: string }
+  ): Promise<ControlledRunClosureResult>;
 }
 
 export function createQuanticoApi(options: { stateFilePath?: string } = {}): QuanticoApi {
@@ -193,6 +198,12 @@ export function createQuanticoApi(options: { stateFilePath?: string } = {}): Qua
     },
     async finalizeControlledRun(runId: string): Promise<ControlledRunFinalizationResult> {
       return system.controlledOperationalExecution.finalizeControlledRun(runId);
+    },
+    async closeControlledRun(
+      runId: string,
+      options?: { approvalDecision?: ControlledRunApprovalDecision; reason?: string }
+    ): Promise<ControlledRunClosureResult> {
+      return system.controlledOperationalExecution.closeControlledRun(runId, options);
     }
   };
 }

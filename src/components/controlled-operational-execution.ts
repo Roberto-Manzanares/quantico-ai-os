@@ -15,6 +15,7 @@ import type {
   ControlledRunFinalizationResult,
   ControlledRunApprovalDecision,
   ControlledRunApprovalResolutionResult,
+  ControlledRunClosureResult,
   ControlledRunStatusDataQuality,
   ControlledRunStatusReadResult,
   EvaluationCriterion,
@@ -508,6 +509,107 @@ export class ControlledOperationalExecutionV018 {
       manifestRecordingStatus: "manifest_recorded",
       manifest: recorded.snapshot,
       reason: check.reason
+    };
+  }
+
+  async closeControlledRun(
+    runId: string,
+    options: { approvalDecision?: ControlledRunApprovalDecision; reason?: string } = {}
+  ): Promise<ControlledRunClosureResult> {
+    const runStatus = await this.getControlledRunStatus(runId);
+
+    if (runStatus.status === "not_found") {
+      return {
+        status: "not_found",
+        runId,
+        reason: runStatus.reason
+      };
+    }
+
+    if (runStatus.lifecycleStatus === "live_pending_approval") {
+      if (!options.approvalDecision) {
+        return {
+          status: "not_closable",
+          runId,
+          executionId: runStatus.executionId,
+          reason: `Controlled run ${runId} requires an explicit approvalDecision before closure.`
+        };
+      }
+
+      const completion = await this.completeControlledRunApproval(runId, {
+        decision: options.approvalDecision,
+        reason: options.reason
+      });
+
+      if (completion.status === "not_found") {
+        return {
+          status: "not_found",
+          runId,
+          reason: completion.reason
+        };
+      }
+
+      if (completion.status === "not_completable") {
+        return {
+          status: "not_closable",
+          runId,
+          executionId: completion.executionId,
+          completion,
+          reason: completion.reason
+        };
+      }
+
+      if (completion.status === "completion_failed") {
+        return {
+          status: "closure_failed",
+          runId,
+          executionId: completion.executionId,
+          completion,
+          reason: completion.reason
+        };
+      }
+
+      const finalization = await this.finalizeControlledRun(runId);
+
+      if (completion.status === "rejected") {
+        if (finalization.status === "finalized") {
+          return {
+            status: "rejected",
+            runId,
+            executionId: completion.executionId,
+            completion,
+            finalization,
+            reason: "Controlled run approval was rejected and closure evidence was finalized."
+          };
+        }
+
+        if (finalization.status === "not_finalizable") {
+          return {
+            status: "rejected",
+            runId,
+            executionId: completion.executionId,
+            completion,
+            finalization,
+            reason: "Controlled run approval was rejected; V0.23 finalization is not applicable yet and provider calls remain zero."
+          };
+        }
+
+        return closureFromFinalizationFailure(runId, completion.executionId, completion, finalization);
+      }
+
+      return closureFromFinalization(runId, completion.executionId, completion, finalization);
+    }
+
+    if (isFinalizableLifecycle(runStatus.lifecycleStatus)) {
+      const finalization = await this.finalizeControlledRun(runId);
+      return closureFromFinalization(runId, runStatus.executionId, undefined, finalization);
+    }
+
+    return {
+      status: "not_closable",
+      runId,
+      executionId: runStatus.executionId,
+      reason: `Controlled run ${runId} is not closable from lifecycle ${runStatus.lifecycleStatus}.`
     };
   }
 
@@ -1262,6 +1364,72 @@ function completionFromContinuationFailure(
     approvalResolution,
     continuation,
     reason: continuation.reason
+  };
+}
+
+function closureFromFinalization(
+  runId: string,
+  executionId: string | undefined,
+  completion: ControlledApprovalCompletionResult | undefined,
+  finalization: ControlledRunFinalizationResult
+): ControlledRunClosureResult {
+  if (finalization.status === "finalized") {
+    return {
+      status: "closed",
+      runId,
+      executionId: finalization.executionId ?? executionId,
+      completion,
+      finalization,
+      reason: "Controlled run closure completed through V0.23 finalization."
+    };
+  }
+
+  return closureFromFinalizationFailure(runId, executionId, completion, finalization);
+}
+
+function closureFromFinalizationFailure(
+  runId: string,
+  executionId: string | undefined,
+  completion: ControlledApprovalCompletionResult | undefined,
+  finalization: ControlledRunFinalizationResult
+): ControlledRunClosureResult {
+  if (finalization.status === "not_found") {
+    return {
+      status: "not_found",
+      runId,
+      reason: finalization.reason
+    };
+  }
+
+  if (finalization.status === "not_finalizable") {
+    return {
+      status: "not_closable",
+      runId,
+      executionId: finalization.executionId ?? executionId,
+      completion,
+      finalization,
+      reason: finalization.reason
+    };
+  }
+
+  if (finalization.status === "finalization_inconsistent") {
+    return {
+      status: "closure_inconsistent",
+      runId,
+      executionId: finalization.executionId ?? executionId,
+      completion,
+      finalization,
+      reason: finalization.reason
+    };
+  }
+
+  return {
+    status: "closure_failed",
+    runId,
+    executionId: finalization.executionId ?? executionId,
+    completion,
+    finalization,
+    reason: finalization.reason
   };
 }
 

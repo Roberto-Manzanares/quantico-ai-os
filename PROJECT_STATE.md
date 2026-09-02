@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.23 implemented.
+Fase: V0.24 implemented.
 
-Version objetivo: V0.23.
+Version objetivo: V0.24.
 
-Codigo implementado: si para V0.23.
+Codigo implementado: si para V0.24.
 
-Estado actual: V0.23 implementada y validada.
+Estado actual: V0.24 implementada y validada.
 
-Ultimo hito: implementacion de V0.23 Controlled Run Finalization Consistency Gate.
+Ultimo hito: implementacion de V0.24 Controlled Run Closure Command.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 211/211 pass.
+Tests actuales: 217/217 pass.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -331,6 +331,24 @@ Capacidad nueva V0.23: `finalizeControlledRun(runId)` verifica evidencia persist
 Contrato V0.23: la operacion devuelve `finalized`, `not_found`, `not_finalizable`, `finalization_inconsistent` o `finalization_failed`; `finalized` exige evidencia terminal coherente; `finalization_inconsistent` reporta contradicciones sin resolverlas automaticamente; no crea executions ficticias ni llama provider.
 
 Limites V0.23: no cambiar Router COST-FIRST, Human Approval Gate, `advisorAuthority`, ProviderAdapter ni Kernel; no agregar autoridad, fallback, retries, dashboard, nueva DB ni nuevos providers; no reimplementar ni duplicar Manifest, Timeline, Audit Index, Budget Ledger o Authority Audit.
+
+Commit de cierre V0.23: `ea138266278f4bfb0898ab7bd0b3154c929e0b3e`.
+
+Tests de cierre V0.23: 211/211 pass.
+
+V0.24: comienza como fase documental separada.
+
+Titulo V0.24: Controlled Run Closure Command.
+
+Objetivo V0.24: definir un comando operacional minimo para cerrar un Controlled Run en una sola operacion, componiendo V0.22 Controlled Approval Completion Command y V0.23 Controlled Run Finalization Consistency Gate.
+
+Problema operacional V0.24: V0.22 completa aprobacion/continuacion y V0.23 finaliza evidencia coherente, pero el operador aun debe coordinar manualmente dos operaciones para cerrar un run pendiente o terminal.
+
+Capacidad nueva V0.24: `closeControlledRun(runId, options?)` completa aprobacion cuando aplique y finaliza el run solo si V0.23 confirma coherencia, sin crear otra capa read-only ni duplicar subsistemas.
+
+Contrato V0.24: la operacion devuelve `closed`, `rejected`, `not_found`, `not_closable`, `closure_inconsistent` o `closure_failed`; requiere `approvalDecision` cuando el run esta en `live_pending_approval`; usa V0.22 para completion y V0.23 para finalization.
+
+Limites V0.24: no cambiar Router COST-FIRST, Human Approval Gate, `advisorAuthority`, ProviderAdapter ni Kernel; no agregar autoridad, fallback, retries, dashboard, nueva DB ni nuevos providers; no duplicar V0.22, V0.23, Manifest, Timeline, Audit Index, Ledger ni Authority Audit.
 
 ## Cierre V0.18
 
@@ -776,17 +794,10 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Implementar V0.23 Controlled Run Finalization Consistency Gate solo despues de aprobar el contrato documental.
-- Exponer `finalizeControlledRun(runId)`.
-- Usar Run Manifest V0.19 como identidad primaria del cierre.
-- Verificar coherencia entre Manifest, Execution, Budget Ledger y Timeline V0.16 cuando esas fuentes apliquen.
-- Mantener finalization outcome separado del lifecycle del Manifest.
-- Registrar cualquier resultado de finalizacion como marcador append-only, compacto y referencial.
-- Reportar `finalization_inconsistent` cuando existan contradicciones persistidas sin resolver automaticamente la fuente correcta.
-- Devolver `not_finalizable` cuando el run aun no tenga estado terminal finalizable.
-- Reutilizar V0.16 Timeline, V0.17 Audit Index, Budget Ledger, Authority Audit y Manifest V0.19 sin duplicar datos ni logica.
-- No crear executions ficticias para `dry_run`, `profile_rejected` ni runs no finalizables.
-- No llamar provider ni reejecutar Router, Authority Policy, Token Governor, Budget Enforcement o Evaluator durante finalizacion.
+- Abrir V0.25 solo documentalmente antes de tocar codigo.
+- Partir de V0.24 cerrada y congelada.
+- Mantener `closeControlledRun(runId, options?)` como cierre operacional compuesto ya validado.
+- Evitar otra capa read-only redundante salvo necesidad operacional clara.
 - Mantener el reporte read-only y sin autoridad operativa.
 - Mantener autoridad limitada explicitamente reversible.
 - Mantener `advisorAuthority = "none"` como rollback seguro.
@@ -878,6 +889,7 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.22 queda cerrada y congelada con Controlled Approval Completion Command, composicion V0.20/V0.21, rechazo sin provider calls, aprobacion con identidad preservada, sin rerouting, sin nueva Authority Policy, sin nueva Execution, sin duplicados en Ledger/Manifest y 206/206 tests.
 - V0.23 declara contrato de Controlled Run Finalization Consistency Gate para cerrar un run solo cuando Manifest, Execution, Ledger y Timeline tengan evidencia terminal coherente, sin duplicar subsistemas ni agregar autoridad.
 - V0.23 queda implementada con `finalizeControlledRun(runId)`, outcome de finalizacion separado del lifecycle, marcador append-only compacto, deteccion de `not_found`, `not_finalizable` e inconsistencias persistidas, cero provider calls, regresion V0.22 y 211/211 tests.
+- V0.24 declara e implementa `closeControlledRun(runId, options?)` para componer V0.22 Completion y V0.23 Finalization en un cierre operacional unico, con aprobacion explicita cuando aplique, rechazo con cero provider calls, runs terminales delegados directo a finalizacion, inconsistencias mapeadas a `closure_inconsistent` y 217/217 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

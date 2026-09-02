@@ -1052,6 +1052,53 @@ export type ControlledRunFinalizationResult =
       reason: string;
     };
 
+export type ControlledRunClosureResult =
+  | {
+      status: "closed";
+      runId: string;
+      executionId?: string;
+      completion?: ControlledApprovalCompletionResult;
+      finalization: ControlledRunFinalizationResult;
+      reason: string;
+    }
+  | {
+      status: "rejected";
+      runId: string;
+      executionId?: string;
+      completion: ControlledApprovalCompletionResult;
+      finalization?: ControlledRunFinalizationResult;
+      reason: string;
+    }
+  | {
+      status: "not_found";
+      runId: string;
+      reason: string;
+    }
+  | {
+      status: "not_closable";
+      runId: string;
+      executionId?: string;
+      completion?: ControlledApprovalCompletionResult;
+      finalization?: ControlledRunFinalizationResult;
+      reason: string;
+    }
+  | {
+      status: "closure_inconsistent";
+      runId: string;
+      executionId?: string;
+      completion?: ControlledApprovalCompletionResult;
+      finalization: ControlledRunFinalizationResult;
+      reason: string;
+    }
+  | {
+      status: "closure_failed";
+      runId: string;
+      executionId?: string;
+      completion?: ControlledApprovalCompletionResult;
+      finalization?: ControlledRunFinalizationResult;
+      reason: string;
+    };
+
 export type ProviderErrorCode = "provider_unavailable" | "provider_error";
 
 export interface ProviderErrorDetails {

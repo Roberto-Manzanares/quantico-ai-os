@@ -2229,3 +2229,31 @@ Resultado validado:
 Consecuencia:
 
 Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution y ProviderAdapter permanecen intactos. V0.23 no agrega autoridad, fallback, retries, dashboard, nueva DB ni provider calls.
+
+## Decision 049: V0.24 Implementa Controlled Run Closure Command
+
+Estado: aceptada.
+
+Decision:
+
+V0.24 implementa `closeControlledRun(runId, options?)` sobre Controlled Operational Execution para cerrar un run controlado mediante composicion estricta de V0.22 Controlled Approval Completion Command y V0.23 Controlled Run Finalization Consistency Gate.
+
+Razon:
+
+La implementacion reduce friccion operacional sin crear otra capa read-only ni duplicar logica. Un operador puede cerrar un run pendiente o terminal con un solo comando auditable, mientras V0.22 conserva la semantica de aprobacion/continuacion y V0.23 conserva la semantica de finalizacion por consistencia.
+
+Resultado validado:
+
+- `closed` para run aprobado/completado y finalizado por V0.23.
+- `rejected` para rechazo humano con provider calls = 0.
+- `not_found` cuando no existe Manifest.
+- `not_closable` cuando falta `approvalDecision` o el run no puede cerrarse con la evidencia actual.
+- `closure_inconsistent` cuando V0.23 reporta evidencia contradictoria.
+- Runs terminales delegan directo a V0.23 sin repetir completion.
+- API expone `closeControlledRun`.
+- Regresion V0.23 preservada.
+- Tests: 217/217 pass.
+
+Consecuencia:
+
+Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution y ProviderAdapter permanecen intactos. V0.24 no agrega autoridad, fallback, retries, dashboard, nueva DB ni provider behavior. Completion V0.22, Finalization V0.23, Manifest, Timeline, Audit Index, Budget Ledger y Authority Audit se reutilizan sin duplicar su logica.

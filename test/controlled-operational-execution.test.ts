@@ -1400,6 +1400,184 @@ test("V0.23 API exposes controlled run finalization", async () => {
   }
 });
 
+test("V0.24 closes pending run by approving through V0.22 and finalizing through V0.23", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v024_closed",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.closeControlledRun(pending.runId ?? "", {
+      approvalDecision: "approved",
+      reason: "approved for V0.24 closure"
+    });
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(
+      pending.runId
+    );
+
+    assert.equal(result.status, "closed");
+    assert.equal(result.status === "closed" ? result.executionId : undefined, pending.executionId);
+    assert.equal(result.status === "closed" ? result.completion?.status : undefined, "completed");
+    assert.equal(result.status === "closed" ? result.finalization.status : undefined, "finalized");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(manifestEvents.filter((event) => event.finalization).length, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.24 rejected closure keeps provider calls at zero and finalizes rejection evidence", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v024_rejected",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.closeControlledRun(pending.runId ?? "", {
+      approvalDecision: "rejected",
+      reason: "rejected for V0.24 closure"
+    });
+
+    assert.equal(result.status, "rejected");
+    assert.equal(result.status === "rejected" ? result.executionId : undefined, pending.executionId);
+    assert.equal(result.status === "rejected" ? result.completion.status : undefined, "rejected");
+    assert.equal(result.status === "rejected" ? result.finalization?.status : undefined, "not_finalizable");
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.24 requires approvalDecision for pending run before closure", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("should not be called");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const pending = await system.controlledOperationalExecution.runControlledExecution(
+      profile({
+        mode: "live",
+        runId: "run_v024_decision_required",
+        constraints: { modelCallRiskLevel: "HIGH" }
+      })
+    );
+    const result = await system.controlledOperationalExecution.closeControlledRun(pending.runId ?? "");
+
+    assert.equal(result.status, "not_closable");
+    assert.match(result.reason, /requires an explicit approvalDecision/);
+    assert.equal(openai.calls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.24 terminal run delegates directly to V0.23 finalization", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const run = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "live", runId: "run_v024_terminal" })
+    );
+    const result = await system.controlledOperationalExecution.closeControlledRun(run.runId ?? "");
+    const manifestEvents = await system.stateMemory.listControlledExecutionRunManifestEvents(run.runId);
+
+    assert.equal(run.status, "execution_completed");
+    assert.equal(result.status, "closed");
+    assert.equal(result.status === "closed" ? result.completion : undefined, undefined);
+    assert.equal(result.status === "closed" ? result.finalization.status : undefined, "finalized");
+    assert.equal(openai.calls.length, 1);
+    assert.equal(manifestEvents.filter((event) => event.finalization).length, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.24 maps V0.23 inconsistent finalization to closure_inconsistent", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const openai = new FakeProvider("QUANTICO_V018_OK");
+  const system = createQuanticoSystem({
+    stateFilePath,
+    modelConfigs,
+    pricingTable,
+    providers: { openai }
+  });
+
+  try {
+    const run = await system.controlledOperationalExecution.runControlledExecution(
+      profile({ mode: "live", runId: "run_v024_inconsistent" })
+    );
+    const execution = await system.stateMemory.getExecution(run.executionId ?? "");
+
+    if (!execution) {
+      throw new Error("Expected execution for V0.24 inconsistent test.");
+    }
+
+    await system.stateMemory.saveExecution({
+      ...execution,
+      status: "failed",
+      updatedAt: new Date(execution.updatedAt.getTime() + 1)
+    });
+
+    const result = await system.controlledOperationalExecution.closeControlledRun(run.runId ?? "");
+
+    assert.equal(result.status, "closure_inconsistent");
+    assert.equal(
+      result.status === "closure_inconsistent" ? result.finalization.status : undefined,
+      "finalization_inconsistent"
+    );
+    assert.equal(openai.calls.length, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("V0.24 API exposes controlled run closure", async () => {
+  const { stateFilePath, cleanup } = await stateFile();
+  const api = createQuanticoApi({ stateFilePath });
+
+  try {
+    const result = await api.closeControlledRun("run_v024_api_missing");
+
+    assert.equal(result.status, "not_found");
+  } finally {
+    await cleanup();
+  }
+});
+
 function profile(
   overrides: Partial<ControlledExecutionProfile> = {}
 ): ControlledExecutionProfile {

@@ -2709,6 +2709,123 @@ Salida:
 - No se duplican subsistemas existentes.
 - Secretos y prompts completos permanecen sanitizados.
 
+## Apertura V0.24
+
+Titulo: V0.24 - Controlled Run Closure Command.
+
+Estado de V0.23: cerrada y congelada.
+
+Commit de cierre V0.23: `ea138266278f4bfb0898ab7bd0b3154c929e0b3e`.
+
+V0.24 comienza como fase documental separada.
+
+### Objetivo V0.24
+
+Definir un comando operacional minimo para cerrar un Controlled Run en una sola operacion, componiendo V0.22 Controlled Approval Completion Command y V0.23 Controlled Run Finalization Consistency Gate.
+
+### Problema Operacional
+
+V0.22 completa la aprobacion humana y la continuacion aprobada. V0.23 finaliza un run solo si la evidencia persistida es coherente. Despues de ambas fases, un operador todavia debe coordinar manualmente dos operaciones separadas para pasar de `live_pending_approval` a cierre finalizado y auditado.
+
+V0.24 aporta capacidad operacional real: un comando unico de cierre que recibe una decision humana cuando aplique, completa el flujo pendiente y finaliza el run solo si V0.23 confirma coherencia.
+
+### Superficie V0.24
+
+Operacion futura minima:
+
+- `closeControlledRun(runId, options?)`.
+
+Entrada:
+
+- `runId`.
+- `approvalDecision` opcional: `approved` o `rejected`, requerido solo si el run esta en `live_pending_approval`.
+- `reason` opcional y sanitizada.
+
+Salida:
+
+- `closed`: completion/finalization terminaron con evidencia coherente.
+- `rejected`: decision humana `rejected`; provider calls = 0; incluye finalization solo cuando V0.23 pueda finalizar la evidencia.
+- `not_found`: no existe Manifest V0.19 para `runId`.
+- `not_closable`: el run existe pero no puede completarse o finalizarse con la evidencia actual.
+- `closure_inconsistent`: V0.23 detecta evidencia persistida contradictoria.
+- `closure_failed`: fallo controlado durante completion o finalization.
+
+### Contrato Minimo
+
+`closeControlledRun(runId, options?)` debe:
+
+- Usar Manifest V0.19 como identidad primaria.
+- Consultar el lifecycle actual del run.
+- Si el run esta en `live_pending_approval`, exigir `approvalDecision` explicita.
+- Si `approvalDecision = "approved"`, delegar exclusivamente en V0.22 para completar aprobacion y continuacion.
+- Si `approvalDecision = "rejected"`, delegar exclusivamente en V0.22 y conservar provider calls = 0.
+- Si el run ya esta en lifecycle terminal, no reejecutar completion.
+- Delegar finalizacion exclusivamente en V0.23.
+- Conservar `runId`, `executionId` y `effectiveSelection` cuando existan.
+- Devolver referencias auditables a Manifest, Timeline V0.16, Audit Index V0.17, Budget Ledger y Authority Audit cuando existan.
+- No duplicar logica de V0.22 ni V0.23.
+
+### Flujo V0.24
+
+1. Leer estado del run por `runId`.
+2. Si no existe, devolver `not_found`.
+3. Si lifecycle es `live_pending_approval`, exigir `approvalDecision`.
+4. Delegar completion a V0.22 solo cuando haya aprobacion pendiente.
+5. Si completion devuelve `completed` o `rejected`, continuar a finalization.
+6. Si el run ya esta terminal, saltar completion y delegar directamente a V0.23.
+7. Delegar finalization a V0.23.
+8. Mapear `finalized` a `closed` o `rejected` segun decision humana/evidencia.
+9. Mapear `not_finalizable` a `not_closable`.
+10. Mapear `finalization_inconsistent` a `closure_inconsistent`.
+11. Mapear fallos controlados a `closure_failed`.
+
+### Invariantes De Seguridad
+
+- Router COST-FIRST permanece intacto.
+- Human Approval Gate permanece intacto y no se salta.
+- `advisorAuthority` permanece intacto.
+- No se agrega autoridad nueva.
+- No se llama provider fuera de la continuacion V0.21 delegada por V0.22.
+- `rejected` conserva provider calls = 0.
+- No hay retries.
+- No hay fallback.
+- No se crea nueva Execution.
+- No se crea nuevo `runId`.
+- No se reejecuta Router ni Authority Policy.
+- No se reimplementa Kernel, Timeline, Audit Index, Budget Ledger, Authority Audit, Manifest, Completion ni Finalization.
+- Maximo una provider call por execution attempt.
+- Evidencia faltante, ambigua o contradictoria falla cerrado.
+- No se exponen prompts completos, API keys, workspace IDs ni secretos.
+
+### Limites V0.24
+
+- No cambiar Router COST-FIRST.
+- No cambiar Human Approval Gate.
+- No cambiar `advisorAuthority`.
+- No ampliar autoridad.
+- No agregar fallback.
+- No agregar retries.
+- No agregar dashboard.
+- No introducir nueva base de datos.
+- No modificar ProviderAdapter.
+- No duplicar V0.22 Completion.
+- No duplicar V0.23 Finalization.
+- No duplicar Timeline, Audit Index, Budget Ledger, Authority Audit ni Manifest.
+
+### Criterios De Aceptacion V0.24
+
+- Existe contrato documental para `closeControlledRun(runId, options?)`.
+- Run pendiente requiere decision humana explicita.
+- `approved` usa V0.22 y despues V0.23.
+- `rejected` usa V0.22, conserva provider calls = 0 y reporta V0.23 solo cuando sea finalizable.
+- Run terminal puede delegar directamente a V0.23.
+- `closed` solo ocurre si V0.23 devuelve `finalized`.
+- Inconsistencias de V0.23 se reportan como `closure_inconsistent`.
+- No se crea nueva Execution ni nuevo `runId`.
+- No se reroutea ni se reevalua Authority Policy.
+- No se duplican Manifest, Ledger, Timeline, Audit Index ni Authority Audit.
+- Secretos y prompts completos permanecen sanitizados.
+
 ## Apertura V0.20
 
 Titulo: V0.20 - Controlled Run Status and Approval Resolution API.
