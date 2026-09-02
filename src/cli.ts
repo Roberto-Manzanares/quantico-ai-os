@@ -223,6 +223,24 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "execution-summary") {
+    const parsed = parseExecutionSummaryArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+    const result = await api.getExecutionAuditSummary(parsed.executionId);
+
+    stdout(json(result));
+    return result.status === "not_found" ? 1 : 0;
+  }
+
   if (command === "provider-scorecards") {
     const parsed = parseProviderScorecardsArgs(args);
 
@@ -277,6 +295,45 @@ export async function runCli(
 
   stdout(usage());
   return command ? 1 : 0;
+}
+
+function parseExecutionSummaryArgs(args: string[]):
+  | {
+      ok: true;
+      executionId: string;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const executionId = args[0];
+
+  if (!executionId || executionId.startsWith("--")) {
+    return { ok: false, reason: "execution-summary requires an executionId." };
+  }
+
+  const parsed: { ok: true; executionId: string; stateFilePath?: string } = {
+    ok: true,
+    executionId
+  };
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--state-file") {
+      const value = args[index + 1];
+
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown execution-summary option: ${arg}.` };
+  }
+
+  return parsed;
 }
 
 function parseAuthoritySafetyArgs(args: string[]):
@@ -692,6 +749,7 @@ function usage(): string {
     "  quantico controlled-run <profile.json> [--state-file <path>]",
     "  quantico controlled-status <runId> [--state-file <path>]",
     "  quantico execution-timeline <executionId> [--state-file <path>]",
+    "  quantico execution-summary <executionId> [--state-file <path>]",
     "  quantico execution-summaries [--status <status>] [--project-id <id>] [--data-quality <quality>] [--requires-attention true|false] [--limit <n>] [--state-file <path>]",
     "  quantico provider-scorecards [--provider openai|anthropic --model <model>] [--state-file <path>]",
     "  quantico authority-safety [--execution-id <executionId>] [--state-file <path>]",

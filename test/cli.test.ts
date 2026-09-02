@@ -481,6 +481,95 @@ test("CLI execution-summaries rejects invalid arguments before API use", async (
   assert.match(errors.join("\n"), /positive integer/);
 });
 
+test("CLI execution-summary reads one audit summary", async () => {
+  const output: string[] = [];
+  let receivedExecutionId: string | undefined;
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async getExecutionAuditSummary(executionId: string) {
+      receivedExecutionId = executionId;
+
+      return {
+        status: "found",
+        executionId,
+        summary: {
+          executionId,
+          projectId: "proj_cli",
+          executionStatus: "needs_human",
+          createdAt: new Date("2026-08-31T12:00:00.000Z"),
+          updatedAt: new Date("2026-08-31T12:01:00.000Z"),
+          timelineDataQuality: "partial",
+          timelineItemCount: 4,
+          sourcesPresent: ["execution", "approval"],
+          hasAuthorityAudit: false,
+          hasBudgetLedger: false,
+          hasEvaluation: true,
+          hasApproval: true,
+          hasInconsistency: false,
+          requiresAttention: true,
+          attentionReasons: ["executionStatus=needs_human"]
+        },
+        reason: "Execution audit summary found."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-summary", "exec_cli_summary", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const summary = payload["summary"] as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedExecutionId, "exec_cli_summary");
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["executionId"], "exec_cli_summary");
+  assert.equal(summary["executionStatus"], "needs_human");
+  assert.equal(summary["requiresAttention"], true);
+});
+
+test("CLI execution-summary returns non-zero when execution is missing", async () => {
+  const output: string[] = [];
+  const api = {
+    async getExecutionAuditSummary(executionId: string) {
+      return {
+        status: "not_found",
+        executionId,
+        reason: `Execution audit summary not found for ${executionId}.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-summary", "exec_cli_missing"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["executionId"], "exec_cli_missing");
+});
+
+test("CLI execution-summary rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["execution-summary", "exec_cli_summary", "--bad"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Unknown execution-summary option/);
+});
+
 test("CLI provider-scorecards lists all scorecards", async () => {
   const output: string[] = [];
   let receivedStateFilePath: string | undefined;
