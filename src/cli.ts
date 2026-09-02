@@ -5,6 +5,7 @@ import {
   createQuanticoApi,
   createQuanticoSystem,
   type ControlledExecutionProfile,
+  type ExecutionAuditSummaryOptions,
   type QuanticoApi
 } from "./index.js";
 
@@ -193,8 +194,125 @@ export async function runCli(
     return result.status === "not_found" ? 1 : 0;
   }
 
+  if (command === "execution-summaries") {
+    const parsed = parseExecutionSummariesArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+    const result = await api.listExecutionAuditSummaries(parsed.options);
+
+    stdout(
+      json({
+        status: result.status,
+        totalExecutions: result.totalExecutions,
+        filtersApplied: result.filtersApplied,
+        dataQuality: result.dataQuality,
+        summaries: result.summaries,
+        reason: result.reason
+      })
+    );
+
+    return 0;
+  }
+
   stdout(usage());
   return command ? 1 : 0;
+}
+
+function parseExecutionSummariesArgs(args: string[]):
+  | {
+      ok: true;
+      options: ExecutionAuditSummaryOptions;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const parsed: {
+    ok: true;
+    options: ExecutionAuditSummaryOptions;
+    stateFilePath?: string;
+  } = { ok: true, options: {} };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const value = args[index + 1];
+
+    if (arg === "--status") {
+      if (!value) {
+        return { ok: false, reason: "--status requires a value." };
+      }
+
+      parsed.options.executionStatus = value as ExecutionAuditSummaryOptions["executionStatus"];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--project-id") {
+      if (!value) {
+        return { ok: false, reason: "--project-id requires a value." };
+      }
+
+      parsed.options.projectId = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--data-quality") {
+      if (!value) {
+        return { ok: false, reason: "--data-quality requires a value." };
+      }
+
+      parsed.options.dataQuality = value as ExecutionAuditSummaryOptions["dataQuality"];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--requires-attention") {
+      if (value !== "true" && value !== "false") {
+        return { ok: false, reason: "--requires-attention requires true or false." };
+      }
+
+      parsed.options.requiresAttention = value === "true";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--limit") {
+      if (!value) {
+        return { ok: false, reason: "--limit requires a value." };
+      }
+
+      const limit = Number(value);
+
+      if (!Number.isInteger(limit) || limit < 1) {
+        return { ok: false, reason: "--limit must be a positive integer." };
+      }
+
+      parsed.options.limit = limit;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--state-file") {
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown execution-summaries option: ${arg}.` };
+  }
+
+  return parsed;
 }
 
 function parseExecutionTimelineArgs(args: string[]):
@@ -422,6 +540,7 @@ function usage(): string {
     "  quantico controlled-run <profile.json> [--state-file <path>]",
     "  quantico controlled-status <runId> [--state-file <path>]",
     "  quantico execution-timeline <executionId> [--state-file <path>]",
+    "  quantico execution-summaries [--status <status>] [--project-id <id>] [--data-quality <quality>] [--requires-attention true|false] [--limit <n>] [--state-file <path>]",
     "  quantico close-run <runId> [--approve|--reject] [--reason \"<reason>\"] [--state-file <path>]"
   ].join("\n");
 }

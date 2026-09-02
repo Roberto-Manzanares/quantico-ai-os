@@ -355,3 +355,128 @@ test("CLI execution-timeline rejects invalid arguments before API use", async ()
   assert.equal(apiCalled, false);
   assert.match(errors.join("\n"), /Unknown execution-timeline option/);
 });
+
+test("CLI execution-summaries lists audit summaries with filters", async () => {
+  const output: string[] = [];
+  let receivedStateFilePath: string | undefined;
+  let receivedOptions: Record<string, unknown> | undefined;
+  const api = {
+    async listExecutionAuditSummaries(options?: Record<string, unknown>) {
+      receivedOptions = options;
+
+      return {
+        status: "found",
+        totalExecutions: 2,
+        filtersApplied: options ?? {},
+        dataQuality: "partial",
+        summaries: [
+          {
+            executionId: "exec_cli_attention",
+            projectId: "proj_cli",
+            executionStatus: "failed",
+            createdAt: new Date("2026-08-31T12:00:00.000Z"),
+            updatedAt: new Date("2026-08-31T12:01:00.000Z"),
+            timelineDataQuality: "partial",
+            timelineItemCount: 3,
+            sourcesPresent: ["execution"],
+            hasAuthorityAudit: false,
+            hasBudgetLedger: false,
+            hasEvaluation: true,
+            hasApproval: false,
+            hasInconsistency: false,
+            requiresAttention: true,
+            attentionReasons: ["executionStatus=failed"]
+          }
+        ],
+        reason: "Execution audit summaries listed."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(
+    [
+      "execution-summaries",
+      "--status",
+      "failed",
+      "--project-id",
+      "proj_cli",
+      "--data-quality",
+      "partial",
+      "--requires-attention",
+      "true",
+      "--limit",
+      "5",
+      "--state-file",
+      "tmp/state.json"
+    ],
+    {
+      createApi: (options) => {
+        receivedStateFilePath = options?.stateFilePath;
+        return api;
+      },
+      stdout: (message) => output.push(message)
+    }
+  );
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const summaries = payload["summaries"] as Array<Record<string, unknown>>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.deepEqual(receivedOptions, {
+    executionStatus: "failed",
+    projectId: "proj_cli",
+    dataQuality: "partial",
+    requiresAttention: true,
+    limit: 5
+  });
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["totalExecutions"], 2);
+  assert.equal(payload["dataQuality"], "partial");
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0]?.["executionId"], "exec_cli_attention");
+  assert.equal(summaries[0]?.["requiresAttention"], true);
+});
+
+test("CLI execution-summaries works without filters", async () => {
+  const output: string[] = [];
+  let receivedOptions: Record<string, unknown> | undefined;
+  const api = {
+    async listExecutionAuditSummaries(options?: Record<string, unknown>) {
+      receivedOptions = options;
+
+      return {
+        status: "found",
+        totalExecutions: 0,
+        filtersApplied: options ?? {},
+        dataQuality: "complete",
+        summaries: [],
+        reason: "No executions are persisted."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["execution-summaries"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(receivedOptions, {});
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["totalExecutions"], 0);
+});
+
+test("CLI execution-summaries rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["execution-summaries", "--limit", "0"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /positive integer/);
+});
