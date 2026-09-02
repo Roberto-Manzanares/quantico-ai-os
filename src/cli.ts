@@ -6,6 +6,7 @@ import {
   createQuanticoSystem,
   type ControlledExecutionProfile,
   type ExecutionAuditSummaryOptions,
+  type ProviderName,
   type QuanticoApi
 } from "./index.js";
 
@@ -222,8 +223,100 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "provider-scorecards") {
+    const parsed = parseProviderScorecardsArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+
+    if (parsed.provider && parsed.model) {
+      const result = await api.getProviderScorecard(parsed.provider, parsed.model);
+
+      stdout(json(result));
+      return result.status === "not_found" ? 1 : 0;
+    }
+
+    const result = await api.listProviderScorecards();
+
+    stdout(
+      json({
+        status: "found",
+        scorecards: Object.values(result.byModel)
+      })
+    );
+
+    return 0;
+  }
+
   stdout(usage());
   return command ? 1 : 0;
+}
+
+function parseProviderScorecardsArgs(args: string[]):
+  | {
+      ok: true;
+      provider?: ProviderName;
+      model?: string;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const parsed: { ok: true; provider?: ProviderName; model?: string; stateFilePath?: string } = {
+    ok: true
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const value = args[index + 1];
+
+    if (arg === "--provider") {
+      if (!value) {
+        return { ok: false, reason: "--provider requires a value." };
+      }
+
+      if (value !== "openai" && value !== "anthropic") {
+        return { ok: false, reason: "--provider must be openai or anthropic." };
+      }
+
+      parsed.provider = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--model") {
+      if (!value) {
+        return { ok: false, reason: "--model requires a value." };
+      }
+
+      parsed.model = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--state-file") {
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown provider-scorecards option: ${arg}.` };
+  }
+
+  if ((parsed.provider && !parsed.model) || (!parsed.provider && parsed.model)) {
+    return { ok: false, reason: "Use --provider and --model together for a single scorecard lookup." };
+  }
+
+  return parsed;
 }
 
 function parseExecutionSummariesArgs(args: string[]):
@@ -541,6 +634,7 @@ function usage(): string {
     "  quantico controlled-status <runId> [--state-file <path>]",
     "  quantico execution-timeline <executionId> [--state-file <path>]",
     "  quantico execution-summaries [--status <status>] [--project-id <id>] [--data-quality <quality>] [--requires-attention true|false] [--limit <n>] [--state-file <path>]",
+    "  quantico provider-scorecards [--provider openai|anthropic --model <model>] [--state-file <path>]",
     "  quantico close-run <runId> [--approve|--reject] [--reason \"<reason>\"] [--state-file <path>]"
   ].join("\n");
 }

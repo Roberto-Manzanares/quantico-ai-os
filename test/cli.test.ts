@@ -480,3 +480,148 @@ test("CLI execution-summaries rejects invalid arguments before API use", async (
   assert.equal(apiCalled, false);
   assert.match(errors.join("\n"), /positive integer/);
 });
+
+test("CLI provider-scorecards lists all scorecards", async () => {
+  const output: string[] = [];
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async listProviderScorecards() {
+      return {
+        byModel: {
+          "openai:gpt-5-nano": {
+            provider: "openai",
+            model: "gpt-5-nano",
+            executionCount: 2,
+            successCount: 2,
+            failureCount: 0,
+            needsHumanCount: 0,
+            evaluationPassCount: 2,
+            evaluationFailCount: 0,
+            evaluationNeedsReviewCount: 0,
+            totalActualCostUsd: 0.000032,
+            averageActualCostUsd: 0.000016,
+            averageLatencyMs: 1200,
+            lastUpdatedAt: new Date("2026-08-31T12:00:00.000Z"),
+            dataQuality: "complete"
+          },
+          "anthropic:claude-haiku-4-5-20251001": {
+            provider: "anthropic",
+            model: "claude-haiku-4-5-20251001",
+            executionCount: 1,
+            successCount: 1,
+            failureCount: 0,
+            needsHumanCount: 0,
+            evaluationPassCount: 1,
+            evaluationFailCount: 0,
+            evaluationNeedsReviewCount: 0,
+            totalActualCostUsd: 0.000295,
+            averageActualCostUsd: 0.000295,
+            averageLatencyMs: 1141,
+            lastUpdatedAt: new Date("2026-08-31T12:01:00.000Z"),
+            dataQuality: "complete"
+          }
+        }
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["provider-scorecards", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const scorecards = payload["scorecards"] as Array<Record<string, unknown>>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(scorecards.length, 2);
+  assert.equal(scorecards[0]?.["provider"], "openai");
+  assert.equal(scorecards[1]?.["provider"], "anthropic");
+});
+
+test("CLI provider-scorecards gets a single scorecard", async () => {
+  const output: string[] = [];
+  let receivedProvider: string | undefined;
+  let receivedModel: string | undefined;
+  const api = {
+    async getProviderScorecard(provider: string, model: string) {
+      receivedProvider = provider;
+      receivedModel = model;
+
+      return {
+        status: "found",
+        scorecard: {
+          provider,
+          model,
+          executionCount: 2,
+          successCount: 2,
+          failureCount: 0,
+          needsHumanCount: 0,
+          evaluationPassCount: 2,
+          evaluationFailCount: 0,
+          evaluationNeedsReviewCount: 0,
+          totalActualCostUsd: 0.000032,
+          averageActualCostUsd: 0.000016,
+          averageLatencyMs: 1200,
+          dataQuality: "complete"
+        }
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["provider-scorecards", "--provider", "openai", "--model", "gpt-5-nano"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const scorecard = payload["scorecard"] as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedProvider, "openai");
+  assert.equal(receivedModel, "gpt-5-nano");
+  assert.equal(payload["status"], "found");
+  assert.equal(scorecard["provider"], "openai");
+  assert.equal(scorecard["model"], "gpt-5-nano");
+});
+
+test("CLI provider-scorecards returns non-zero for missing scorecard", async () => {
+  const output: string[] = [];
+  const api = {
+    async getProviderScorecard(provider: string, model: string) {
+      return {
+        status: "not_found",
+        provider,
+        model,
+        reason: `Provider scorecard not found for ${provider}/${model}.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["provider-scorecards", "--provider", "openai", "--model", "missing-model"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["provider"], "openai");
+  assert.equal(payload["model"], "missing-model");
+});
+
+test("CLI provider-scorecards rejects incomplete lookup before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["provider-scorecards", "--provider", "openai"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Use --provider and --model together/);
+});
