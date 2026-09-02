@@ -1,9 +1,16 @@
 #!/usr/bin/env node
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { createQuanticoApi, createQuanticoSystem, type QuanticoApi } from "./index.js";
+import {
+  createQuanticoApi,
+  createQuanticoSystem,
+  type ControlledExecutionProfile,
+  type QuanticoApi
+} from "./index.js";
 
 export interface CliDependencies {
   createApi?: (options?: { stateFilePath?: string }) => QuanticoApi;
+  readTextFile?: (path: string) => Promise<string>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
 }
@@ -31,6 +38,47 @@ export async function runCli(
     );
 
     return 0;
+  }
+
+  if (command === "controlled-run") {
+    const parsed = parseControlledRunArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const profileResult = await readProfile(parsed.profilePath, dependencies.readTextFile ?? readFileText);
+
+    if (!profileResult.ok) {
+      stderr(profileResult.reason);
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+    const result = await api.runControlledExecution(profileResult.profile);
+
+    stdout(
+      json({
+        runId: result.runId,
+        executionId: result.executionId,
+        status: result.status,
+        profileValidationStatus: result.profileValidationStatus,
+        provider: result.provider,
+        model: result.model,
+        estimatedCostUsd: result.estimatedCostUsd,
+        actualCostUsd: result.actualCostUsd,
+        evaluationStatus: result.evaluationStatus,
+        reason: result.reason
+      })
+    );
+
+    return result.status === "profile_rejected" || result.manifestRecordingStatus === "manifest_record_failed"
+      ? 1
+      : 0;
   }
 
   if (command === "close-run") {
@@ -136,6 +184,72 @@ function parseCloseRunArgs(args: string[]):
   return parsed;
 }
 
+function parseControlledRunArgs(args: string[]):
+  | {
+      ok: true;
+      profilePath: string;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const profilePath = args[0];
+
+  if (!profilePath || profilePath.startsWith("--")) {
+    return { ok: false, reason: "controlled-run requires a profile JSON file path." };
+  }
+
+  const parsed: { ok: true; profilePath: string; stateFilePath?: string } = {
+    ok: true,
+    profilePath
+  };
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--state-file") {
+      const value = args[index + 1];
+
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown controlled-run option: ${arg}.` };
+  }
+
+  return parsed;
+}
+
+async function readProfile(
+  profilePath: string,
+  readTextFile: (path: string) => Promise<string>
+): Promise<{ ok: true; profile: ControlledExecutionProfile } | { ok: false; reason: string }> {
+  try {
+    const raw = await readTextFile(profilePath);
+    const value = JSON.parse(raw) as unknown;
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, reason: "Controlled run profile JSON must be an object." };
+    }
+
+    return { ok: true, profile: value as ControlledExecutionProfile };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof SyntaxError
+        ? `Controlled run profile JSON is invalid: ${error.message}`
+        : `Unable to read controlled run profile: ${error instanceof Error ? error.message : "unknown error"}`
+    };
+  }
+}
+
+async function readFileText(path: string): Promise<string> {
+  return readFile(path, "utf8");
+}
+
 function json(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
@@ -144,6 +258,7 @@ function usage(): string {
   return [
     "Usage:",
     "  quantico run \"<goal>\"",
+    "  quantico controlled-run <profile.json> [--state-file <path>]",
     "  quantico close-run <runId> [--approve|--reject] [--reason \"<reason>\"] [--state-file <path>]"
   ].join("\n");
 }

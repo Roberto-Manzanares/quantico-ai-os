@@ -1,7 +1,101 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runCli } from "../src/cli.js";
-import type { QuanticoApi } from "../src/index.js";
+import type { ControlledExecutionProfile, QuanticoApi } from "../src/index.js";
+
+test("CLI controlled-run reads a profile JSON and delegates to runControlledExecution", async () => {
+  const output: string[] = [];
+  let receivedStateFilePath: string | undefined;
+  let receivedProfileMode: string | undefined;
+  let receivedGoal: string | undefined;
+  const api = {
+    async runControlledExecution(profile: ControlledExecutionProfile) {
+      receivedProfileMode = profile.mode;
+      receivedGoal = profile.goal;
+
+      return {
+        status: "dry_run_ready",
+        profileValidationStatus: "profile_validated",
+        runId: "run_cli_controlled",
+        executionId: undefined,
+        provider: "openai",
+        model: "gpt-5-nano",
+        estimatedCostUsd: 0.000018,
+        actualCostUsd: undefined,
+        evaluationStatus: undefined,
+        reason: "dry run ready"
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["controlled-run", "profile.json", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    readTextFile: async () =>
+      JSON.stringify({
+        mode: "dry_run",
+        goal: "Return QUANTICO_CLI_OK",
+        constraints: {},
+        evaluationCriteria: [{ type: "contains_text", value: "QUANTICO_CLI_OK" }],
+        approvalPolicy: {},
+        budgets: { maxCostUsd: 0.001, maxOutputTokens: 32, maxTotalTokens: 256 },
+        auditRequirements: { requireTimeline: true, requireAuditSummary: true }
+      }),
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(receivedProfileMode, "dry_run");
+  assert.equal(receivedGoal, "Return QUANTICO_CLI_OK");
+  assert.equal(payload["runId"], "run_cli_controlled");
+  assert.equal(payload["status"], "dry_run_ready");
+  assert.equal(payload["provider"], "openai");
+  assert.equal("goal" in payload, false);
+});
+
+test("CLI controlled-run rejects invalid profile JSON before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["controlled-run", "bad-profile.json"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    readTextFile: async () => "{not json",
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /profile JSON is invalid/);
+});
+
+test("CLI controlled-run returns non-zero when profile is rejected", async () => {
+  const output: string[] = [];
+  const api = {
+    async runControlledExecution() {
+      return {
+        status: "profile_rejected",
+        profileValidationStatus: "profile_rejected",
+        runId: "run_cli_rejected",
+        reason: "Profile evaluationCriteria must include deterministic criteria."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["controlled-run", "profile.json"], {
+    createApi: () => api,
+    readTextFile: async () => JSON.stringify({ mode: "live" }),
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "profile_rejected");
+  assert.equal(payload["reason"], "Profile evaluationCriteria must include deterministic criteria.");
+});
 
 test("CLI close-run delegates to the controlled closure API", async () => {
   const output: string[] = [];
