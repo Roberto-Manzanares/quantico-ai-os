@@ -175,3 +175,96 @@ test("CLI close-run rejects conflicting approval flags before API use", async ()
   assert.equal(apiCalled, false);
   assert.match(errors.join("\n"), /Use only one of --approve or --reject/);
 });
+
+test("CLI controlled-status reads a run status without exposing profile data", async () => {
+  const output: string[] = [];
+  let receivedRunId: string | undefined;
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async getControlledRunStatus(runId: string) {
+      receivedRunId = runId;
+
+      return {
+        status: "found",
+        runId,
+        executionId: "exec_cli_status",
+        mode: "live",
+        lifecycleStatus: "live_completed",
+        persistenceOutcome: "manifest_recorded",
+        profileFingerprint: "profile_hash",
+        profileValidationStatus: "profile_validated",
+        controlledStatus: "execution_completed",
+        provider: "openai",
+        model: "gpt-5-nano",
+        estimatedCostUsd: 0.000018,
+        actualCostUsd: 0.000016,
+        evaluationStatus: "pass",
+        requiresHumanApproval: false,
+        approvalResolutionEligible: false,
+        references: {},
+        dataQuality: "complete",
+        reason: "Controlled run status is complete."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["controlled-status", "run_cli_status", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedRunId, "run_cli_status");
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["runId"], "run_cli_status");
+  assert.equal(payload["executionId"], "exec_cli_status");
+  assert.equal(payload["lifecycleStatus"], "live_completed");
+  assert.equal(payload["provider"], "openai");
+  assert.equal(payload["model"], "gpt-5-nano");
+  assert.equal(payload["dataQuality"], "complete");
+  assert.equal("profileFingerprint" in payload, false);
+  assert.equal("references" in payload, false);
+});
+
+test("CLI controlled-status returns non-zero for missing runs", async () => {
+  const output: string[] = [];
+  const api = {
+    async getControlledRunStatus(runId: string) {
+      return {
+        status: "not_found",
+        runId,
+        reason: `Controlled run ${runId} was not found.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["controlled-status", "run_cli_missing"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["runId"], "run_cli_missing");
+  assert.match(String(payload["reason"]), /not found/);
+});
+
+test("CLI controlled-status rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["controlled-status", "run_cli_status", "--unknown"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Unknown controlled-status option/);
+});
