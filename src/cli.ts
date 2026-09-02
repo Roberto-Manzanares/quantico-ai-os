@@ -83,6 +83,38 @@ export async function runCli(
       : 0;
   }
 
+  if (command === "approval") {
+    const parsed = parseApprovalArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+    const result =
+      parsed.decision === "approved"
+        ? await api.approvePendingStep({ executionId: parsed.executionId, reason: parsed.reason })
+        : await api.rejectPendingStep({ executionId: parsed.executionId, reason: parsed.reason });
+
+    stdout(
+      json({
+        executionId: result.executionId,
+        status: result.status,
+        decisionApplied: result.decisionApplied,
+        pendingStepId: result.pendingStep?.id,
+        riskLevel: result.pendingStep?.riskLevel,
+        actionName: result.pendingStep?.action.name,
+        reason: result.reason
+      })
+    );
+
+    return 0;
+  }
+
   if (command === "close-run") {
     const parsed = parseCloseRunArgs(args);
 
@@ -331,6 +363,86 @@ export async function runCli(
 
   stdout(usage());
   return command ? 1 : 0;
+}
+
+function parseApprovalArgs(args: string[]):
+  | {
+      ok: true;
+      executionId: string;
+      decision: "approved" | "rejected";
+      reason?: string;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const executionId = args[0];
+
+  if (!executionId || executionId.startsWith("--")) {
+    return { ok: false, reason: "approval requires an executionId." };
+  }
+
+  const parsed: {
+    ok: true;
+    executionId: string;
+    decision?: "approved" | "rejected";
+    reason?: string;
+    stateFilePath?: string;
+  } = { ok: true, executionId };
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--approve") {
+      parsed.decision = "approved";
+      continue;
+    }
+
+    if (arg === "--reject") {
+      parsed.decision = "rejected";
+      continue;
+    }
+
+    if (arg === "--reason") {
+      const value = args[index + 1];
+
+      if (!value) {
+        return { ok: false, reason: "--reason requires a value." };
+      }
+
+      parsed.reason = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--state-file") {
+      const value = args[index + 1];
+
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown approval option: ${arg}.` };
+  }
+
+  if (args.includes("--approve") && args.includes("--reject")) {
+    return { ok: false, reason: "Use only one of --approve or --reject." };
+  }
+
+  if (!parsed.decision) {
+    return { ok: false, reason: "approval requires --approve or --reject." };
+  }
+
+  return {
+    ok: true,
+    executionId: parsed.executionId,
+    decision: parsed.decision,
+    reason: parsed.reason,
+    stateFilePath: parsed.stateFilePath
+  };
 }
 
 function parseExecutionResultArgs(args: string[]):
@@ -821,6 +933,7 @@ function usage(): string {
   return [
     "Usage:",
     "  quantico run \"<goal>\"",
+    "  quantico approval <executionId> --approve|--reject [--reason \"<reason>\"] [--state-file <path>]",
     "  quantico controlled-run <profile.json> [--state-file <path>]",
     "  quantico controlled-status <runId> [--state-file <path>]",
     "  quantico execution-timeline <executionId> [--state-file <path>]",

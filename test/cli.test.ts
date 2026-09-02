@@ -97,6 +97,114 @@ test("CLI controlled-run returns non-zero when profile is rejected", async () =>
   assert.equal(payload["reason"], "Profile evaluationCriteria must include deterministic criteria.");
 });
 
+test("CLI approval approves a pending step", async () => {
+  const output: string[] = [];
+  let receivedStateFilePath: string | undefined;
+  let receivedCommand: Record<string, unknown> | undefined;
+  const api = {
+    async approvePendingStep(command: Record<string, unknown>) {
+      receivedCommand = command;
+
+      return {
+        executionId: command["executionId"],
+        status: "running",
+        decisionApplied: "approved",
+        reason: "Pending step approved and recovered for execution resume.",
+        pendingStep: {
+          id: "pending_cli_approve",
+          riskLevel: "HIGH",
+          action: { name: "provider_call" }
+        }
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(
+    ["approval", "exec_cli_approval", "--approve", "--reason", "ok", "--state-file", "tmp/state.json"],
+    {
+      createApi: (options) => {
+        receivedStateFilePath = options?.stateFilePath;
+        return api;
+      },
+      stdout: (message) => output.push(message)
+    }
+  );
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.deepEqual(receivedCommand, { executionId: "exec_cli_approval", reason: "ok" });
+  assert.equal(payload["executionId"], "exec_cli_approval");
+  assert.equal(payload["status"], "running");
+  assert.equal(payload["decisionApplied"], "approved");
+  assert.equal(payload["pendingStepId"], "pending_cli_approve");
+  assert.equal(payload["riskLevel"], "HIGH");
+  assert.equal(payload["actionName"], "provider_call");
+});
+
+test("CLI approval rejects a pending step", async () => {
+  const output: string[] = [];
+  let rejectCalled = false;
+  const api = {
+    async rejectPendingStep() {
+      rejectCalled = true;
+
+      return {
+        executionId: "exec_cli_reject_approval",
+        status: "cancelled",
+        decisionApplied: "rejected",
+        reason: "Pending step rejected; action remains blocked.",
+        pendingStep: {
+          id: "pending_cli_reject",
+          riskLevel: "HIGH",
+          action: { name: "provider_call" }
+        }
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["approval", "exec_cli_reject_approval", "--reject"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(rejectCalled, true);
+  assert.equal(payload["status"], "cancelled");
+  assert.equal(payload["decisionApplied"], "rejected");
+});
+
+test("CLI approval rejects conflicting approval flags before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["approval", "exec_cli_conflict", "--approve", "--reject"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Use only one of --approve or --reject/);
+});
+
+test("CLI approval requires an approval decision before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["approval", "exec_cli_missing_decision"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /requires --approve or --reject/);
+});
+
 test("CLI close-run delegates to the controlled closure API", async () => {
   const output: string[] = [];
   const calls: Array<{ runId: string; approvalDecision?: "approved" | "rejected"; reason?: string }> = [];
