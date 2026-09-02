@@ -255,8 +255,67 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "authority-safety") {
+    const parsed = parseAuthoritySafetyArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const api = (dependencies.createApi ?? createQuanticoApi)({
+      stateFilePath: parsed.stateFilePath
+    });
+    const result = parsed.executionId
+      ? await api.getAuthorityRuntimeSafetyMetricsForExecution(parsed.executionId)
+      : await api.getAuthorityRuntimeSafetyMetrics();
+
+    stdout(json(result));
+    return result.status === "not_found" ? 1 : 0;
+  }
+
   stdout(usage());
   return command ? 1 : 0;
+}
+
+function parseAuthoritySafetyArgs(args: string[]):
+  | {
+      ok: true;
+      executionId?: string;
+      stateFilePath?: string;
+    }
+  | { ok: false; reason: string } {
+  const parsed: { ok: true; executionId?: string; stateFilePath?: string } = { ok: true };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const value = args[index + 1];
+
+    if (arg === "--execution-id") {
+      if (!value) {
+        return { ok: false, reason: "--execution-id requires a value." };
+      }
+
+      parsed.executionId = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--state-file") {
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown authority-safety option: ${arg}.` };
+  }
+
+  return parsed;
 }
 
 function parseProviderScorecardsArgs(args: string[]):
@@ -635,6 +694,7 @@ function usage(): string {
     "  quantico execution-timeline <executionId> [--state-file <path>]",
     "  quantico execution-summaries [--status <status>] [--project-id <id>] [--data-quality <quality>] [--requires-attention true|false] [--limit <n>] [--state-file <path>]",
     "  quantico provider-scorecards [--provider openai|anthropic --model <model>] [--state-file <path>]",
+    "  quantico authority-safety [--execution-id <executionId>] [--state-file <path>]",
     "  quantico close-run <runId> [--approve|--reject] [--reason \"<reason>\"] [--state-file <path>]"
   ].join("\n");
 }

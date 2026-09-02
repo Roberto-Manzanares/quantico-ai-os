@@ -625,3 +625,151 @@ test("CLI provider-scorecards rejects incomplete lookup before API use", async (
   assert.equal(apiCalled, false);
   assert.match(errors.join("\n"), /Use --provider and --model together/);
 });
+
+test("CLI authority-safety reads the full safety metrics report", async () => {
+  const output: string[] = [];
+  let receivedStateFilePath: string | undefined;
+  const api = {
+    async getAuthorityRuntimeSafetyMetrics() {
+      return {
+        status: "found",
+        report: {
+          generatedAt: new Date("2026-08-31T12:00:00.000Z"),
+          totalAuthorityEvaluations: 2,
+          allowedInterventions: 1,
+          blockedInterventions: 1,
+          allowedRate: 0.5,
+          blockedRate: 0.5,
+          failClosedCount: 1,
+          failClosedByReason: { insufficient_evidence: 1 },
+          totalAdditionalCostUsdAuthorized: 0.000002,
+          averageAdditionalCostUsdAuthorized: 0.000002,
+          maxAdditionalCostUsdObserved: 0.000002,
+          outcomeComparisons: [],
+          outcomesByAuthorityDecision: {
+            allowed: { executionCount: 0, byExecutionStatus: {}, byEvaluationStatus: {} },
+            blocked: { executionCount: 0, byExecutionStatus: {}, byEvaluationStatus: {} }
+          },
+          dataQuality: "complete",
+          reasons: ["Authority runtime safety metrics generated."]
+        },
+        reason: "Authority runtime safety metrics report generated with complete dataQuality."
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["authority-safety", "--state-file", "tmp/state.json"], {
+    createApi: (options) => {
+      receivedStateFilePath = options?.stateFilePath;
+      return api;
+    },
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+  const report = payload["report"] as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedStateFilePath, "tmp/state.json");
+  assert.equal(payload["status"], "found");
+  assert.equal(report["totalAuthorityEvaluations"], 2);
+  assert.equal(report["allowedRate"], 0.5);
+  assert.equal(report["dataQuality"], "complete");
+});
+
+test("CLI authority-safety reads metrics for one execution", async () => {
+  const output: string[] = [];
+  let receivedExecutionId: string | undefined;
+  const api = {
+    async getAuthorityRuntimeSafetyMetricsForExecution(executionId: string) {
+      receivedExecutionId = executionId;
+
+      return {
+        status: "found",
+        executionId,
+        report: {
+          generatedAt: new Date("2026-08-31T12:00:00.000Z"),
+          totalAuthorityEvaluations: 1,
+          allowedInterventions: 0,
+          blockedInterventions: 1,
+          allowedRate: 0,
+          blockedRate: 1,
+          failClosedCount: 1,
+          failClosedByReason: { insufficient_evidence: 1 },
+          totalAdditionalCostUsdAuthorized: 0,
+          averageAdditionalCostUsdAuthorized: 0,
+          maxAdditionalCostUsdObserved: 0,
+          outcomeComparisons: [
+            {
+              executionId,
+              authorityDecision: "blocked",
+              actualSelection: { provider: "openai", model: "gpt-5-nano" },
+              shadowRecommendation: null,
+              effectiveSelection: { provider: "openai", model: "gpt-5-nano" },
+              actualOutcome: null,
+              counterfactualOutcome: "unavailable",
+              comparisonStatus: "insufficient_data",
+              reason: "Outcome evidence is incomplete."
+            }
+          ],
+          outcomesByAuthorityDecision: {
+            allowed: { executionCount: 0, byExecutionStatus: {}, byEvaluationStatus: {} },
+            blocked: { executionCount: 0, byExecutionStatus: {}, byEvaluationStatus: {} }
+          },
+          dataQuality: "partial",
+          reasons: ["Outcome evidence is incomplete."]
+        },
+        outcomeComparisons: [],
+        dataQuality: "partial",
+        reason: `Authority runtime safety metrics found for ${executionId} with partial dataQuality.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["authority-safety", "--execution-id", "exec_cli_safety"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 0);
+  assert.equal(receivedExecutionId, "exec_cli_safety");
+  assert.equal(payload["status"], "found");
+  assert.equal(payload["executionId"], "exec_cli_safety");
+  assert.equal(payload["dataQuality"], "partial");
+});
+
+test("CLI authority-safety returns non-zero when execution evidence is missing", async () => {
+  const output: string[] = [];
+  const api = {
+    async getAuthorityRuntimeSafetyMetricsForExecution(executionId: string) {
+      return {
+        status: "not_found",
+        executionId,
+        reason: `Authority runtime safety metrics not found for ${executionId}.`
+      };
+    }
+  } as unknown as QuanticoApi;
+  const exitCode = await runCli(["authority-safety", "--execution-id", "exec_cli_missing"], {
+    createApi: () => api,
+    stdout: (message) => output.push(message)
+  });
+  const payload = JSON.parse(output[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(exitCode, 1);
+  assert.equal(payload["status"], "not_found");
+  assert.equal(payload["executionId"], "exec_cli_missing");
+});
+
+test("CLI authority-safety rejects invalid arguments before API use", async () => {
+  let apiCalled = false;
+  const errors: string[] = [];
+  const exitCode = await runCli(["authority-safety", "--bad"], {
+    createApi: () => {
+      apiCalled = true;
+      return {} as QuanticoApi;
+    },
+    stderr: (message) => errors.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(apiCalled, false);
+  assert.match(errors.join("\n"), /Unknown authority-safety option/);
+});
