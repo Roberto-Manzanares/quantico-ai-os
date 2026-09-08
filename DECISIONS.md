@@ -2294,3 +2294,25 @@ Resultado validado:
 - Cierre, estado, timeline, summaries, resultado, scorecards y metricas de autoridad delegan a sus APIs existentes.
 - Consultas `not_found` devuelven codigo no exitoso donde aplica.
 - Tests: 250/250 pass.
+
+## Decision 051: Cierre De Release V1.0 Tras Smoke V0.26
+
+Estado: aceptada.
+
+Decision:
+
+V1.0 se cierra despues de una unica ejecucion real V0.26 con OpenAI `gpt-5-nano` mediante Responses API y `reasoning.effort = "minimal"`, autorizada por Human Gate, presupuestada y finalizada con evidencia consistente.
+
+Resultado validado:
+
+- `run_v026_final_smoke_20260907` conserva un unico `executionId` y una provider call.
+- COST-FIRST selecciona OpenAI `gpt-5-nano`; `advisorAuthority` permanece `none`.
+- `finalResult` es `QUANTICO_V026_OK` y la evaluacion es `pass`.
+- Budget Ledger queda `calculated` con costo real USD `0.000015`, bajo el tope USD `0.000040`.
+- Timeline tiene `dataQuality = "complete"` y el cierre termina `closed` mediante V0.23.
+- No hubo retries ni fallback.
+- Suite: 251/251 pass.
+
+Consecuencia:
+
+V1.0 congela el alcance actual. No se abre V0.27, no se amplian providers, routing, autoridad, dashboard ni automatizacion sin una decision posterior explicita.

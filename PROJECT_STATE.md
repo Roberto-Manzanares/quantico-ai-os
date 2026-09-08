@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.25 implemented.
+Fase: V1.0 released.
 
-Version objetivo: V0.25.
+Version objetivo: V1.0.
 
-Codigo implementado: si para V0.25.
+Codigo implementado: si para V1.0.
 
-Estado actual: V0.25 implementada y validada.
+Estado actual: V1.0 cerrada y validada.
 
-Ultimo hito: CLI operacional auditable para los flujos controlados y las consultas existentes.
+Ultimo hito: smoke final V0.26 real end-to-end exitoso mediante OpenAI Responses API.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,7 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 250/250 pass.
+Tests actuales: 251/251 pass.
 
 V0.25: implementada y validada por dry-run.
 
@@ -43,6 +43,18 @@ Titulo V0.25: Operational CLI Surface.
 Objetivo V0.25: exponer por CLI la ejecucion controlada, aprobacion humana, cierre de run y consultas auditables ya disponibles en API, sin duplicar logica ni ampliar autoridad.
 
 Commit de cierre V0.25: `8d60039`.
+
+V0.26: implementada y validada por smoke real end-to-end.
+
+Titulo V0.26: Final Live E2E Validation.
+
+Objetivo V0.26: validar una sola ejecucion real y controlada con COST-FIRST, Human Gate, Token Governor, Budget Ledger, Timeline y Finalization, sin retries ni fallback.
+
+Resultado validado: `run_v026_final_smoke_20260907` / `exec_mtrxbfqe` termino `succeeded` con evaluation `pass`, `finalResult` `QUANTICO_V026_OK`, ledger `calculated`, timeline `complete`, finalization `closed`, costo real USD `0.000015` bajo el tope USD `0.000040` y una sola provider call.
+
+V1.0: cerrada.
+
+Criterio de release: Kernel multimodelo, control presupuestario, Human Gate, persistencia auditable, CLI operacional y validacion real E2E satisfacen el alcance definido sin ampliar routing ni autoridad.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -802,9 +814,8 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Abrir V0.26 solo documentalmente antes de tocar codigo.
-- Partir de V0.25 cerrada y congelada.
-- Antes de ampliar la superficie, validar una ejecucion `live` controlada end-to-end con evidencia persistida y aprobacion humana cuando corresponda.
+- Mantener V1.0 congelada hasta una decision explicita de nueva fase.
+- No reabrir provider calls reales sin presupuesto, aprobacion humana y objetivo acotado.
 - Mantener `closeControlledRun(runId, options?)` como cierre operacional compuesto ya validado.
 - Evitar otra capa read-only redundante salvo necesidad operacional clara.
 - Mantener el reporte read-only y sin autoridad operativa.
@@ -900,6 +911,8 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.23 queda implementada con `finalizeControlledRun(runId)`, outcome de finalizacion separado del lifecycle, marcador append-only compacto, deteccion de `not_found`, `not_finalizable` e inconsistencias persistidas, cero provider calls, regresion V0.22 y 211/211 tests.
 - V0.24 declara e implementa `closeControlledRun(runId, options?)` para componer V0.22 Completion y V0.23 Finalization en un cierre operacional unico, con aprobacion explicita cuando aplique, rechazo con cero provider calls, runs terminales delegados directo a finalizacion, inconsistencias mapeadas a `closure_inconsistent` y 217/217 tests.
 - V0.25 declara e implementa una CLI operacional delgada para execution controlada, aprobacion, cierre y lecturas auditables, con salida JSON, validacion local de argumentos, sin duplicar semantica de API ni ampliar autoridad y 250/250 tests.
+- V0.26 valida el flujo real end-to-end con OpenAI `gpt-5-nano` via Responses API y `reasoning.effort = minimal`: resultado verificable, ledger calculado, timeline completa, finalization cerrada, una provider call, sin retries/fallback y 251/251 tests.
+- V1.0 queda cerrada solo despues del smoke V0.26 exitoso, la suite completa y la evidencia persistida consistente.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

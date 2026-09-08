@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 y sus incrementos cerrados hasta V0.25, incluida la CLI operacional auditable.
+Esta especificacion cubre V1.0: el MVP V0.1 y sus incrementos cerrados hasta la validacion real E2E V0.26, incluida la CLI operacional auditable.
 
 ## Alcance Del MVP V0.1
 
@@ -3463,6 +3463,10 @@ quantico authority-safety [--execution-id <executionId>] [--state-file <path>]
 - Las consultas preservan los outcomes `found` y `not_found` de sus APIs.
 - La CLI no expone secretos ni reimplementa semantica de negocio.
 - Router COST-FIRST, Human Approval Gate y `advisorAuthority` permanecen intactos.
+
+## Cierre V1.0
+
+V1.0 exige una ejecucion V0.26 real, unica y autorizada que complete `runId -> executionId -> finalResult -> Budget Ledger -> Timeline -> Finalization`, sin retries ni fallback. El cierre requiere evaluacion `pass`, ledger `calculated`, timeline `complete`, finalization `closed` y costo real dentro del presupuesto aprobado. COST-FIRST, Token Governor, Human Approval Gate y `advisorAuthority = "none"` permanecen sin cambios.
 
 ## Apertura V0.16
 
