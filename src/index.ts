@@ -13,6 +13,7 @@ export * from "./components/execution-audit-timeline.js";
 export * from "./components/human-approval-gate.js";
 export * from "./components/limited-shadow-authority-policy.js";
 export * from "./components/model-router.js";
+export * from "./components/operator.js";
 export * from "./components/provider-scorecard.js";
 export * from "./components/shadow-routing-advisor.js";
 export * from "./components/shadow-routing-analysis-report.js";

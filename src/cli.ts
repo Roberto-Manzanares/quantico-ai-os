@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   createQuanticoApi,
   createQuanticoSystem,
+  LocalOperator,
   type ControlledExecutionProfile,
   type ExecutionAuditSummaryOptions,
   type ProviderName,
@@ -41,6 +42,45 @@ export async function runCli(
       stateFilePath: parsed.stateFilePath
     });
     stdout(`Quantico dashboard available at ${dashboard.url}`);
+    return 0;
+  }
+
+  if (command === "operator") {
+    const parsed = parseOperatorArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const system = createQuanticoSystem({ stateFilePath: parsed.stateFilePath });
+    const operator = new LocalOperator({
+      state: system.stateMemory,
+      controlledExecution: system.controlledOperationalExecution,
+      humanApprovalGate: system.humanApprovalGate,
+      budgetLedger: system.budgetLedger,
+      workspaceRoot: parsed.workspaceRoot
+    });
+    const plan = parsed.executionId
+      ? await operator.load(parsed.executionId)
+      : await operator.prepare(parsed.goal ?? "");
+
+    if (parsed.decision === "reject") {
+      await operator.reject(plan, "Rejected from the local Operator interface.");
+      stdout(json({ plan, status: "rejected", message: "No HTTP request or file write was performed." }));
+      return 0;
+    }
+
+    if (parsed.decision !== "approve") {
+      stdout(json({ plan, status: "awaiting_approval", message: "Review the plan and rerun with --approve to execute." }));
+      return 0;
+    }
+
+    const result = await operator.approve(plan, "Approved from the local Operator interface.").then(
+      (approvedPlan) => operator.execute(approvedPlan, parsed.sourceUrl, parsed.outputPath)
+    );
+    stdout(json({ status: "succeeded", plan: result.plan, outputPath: result.outputPath, sources: result.sources, auditEventCount: result.auditEventCount }));
     return 0;
   }
 
@@ -462,6 +502,65 @@ function parseApprovalArgs(args: string[]):
     reason: parsed.reason,
     stateFilePath: parsed.stateFilePath
   };
+}
+
+function parseOperatorArgs(args: string[]):
+  | {
+      ok: true;
+      goal?: string;
+      executionId?: string;
+      sourceUrl: string;
+      outputPath: string;
+      decision?: "approve" | "reject";
+      stateFilePath?: string;
+      workspaceRoot?: string;
+    }
+  | { ok: false; reason: string } {
+  const goalParts: string[] = [];
+  const parsed: {
+    ok: true;
+    goal?: string;
+    executionId?: string;
+    sourceUrl?: string;
+    outputPath?: string;
+    decision?: "approve" | "reject";
+    stateFilePath?: string;
+    workspaceRoot?: string;
+  } = { ok: true };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (!arg.startsWith("--")) {
+      goalParts.push(arg);
+      continue;
+    }
+    if (arg === "--approve") { parsed.decision = "approve"; continue; }
+    if (arg === "--reject") { parsed.decision = "reject"; continue; }
+    if (arg === "--source" || arg === "--output" || arg === "--state-file" || arg === "--workspace" || arg === "--execution") {
+      const value = args[index + 1];
+      if (!value) return { ok: false, reason: `${arg} requires a value.` };
+      if (arg === "--source") parsed.sourceUrl = value;
+      if (arg === "--output") parsed.outputPath = value;
+      if (arg === "--state-file") parsed.stateFilePath = value;
+      if (arg === "--workspace") parsed.workspaceRoot = value;
+      if (arg === "--execution") parsed.executionId = value;
+      index += 1;
+      continue;
+    }
+    return { ok: false, reason: `Unknown operator option: ${arg}.` };
+  }
+
+  if (parsed.decision === "approve" && args.includes("--reject")) {
+    return { ok: false, reason: "Use only one of --approve or --reject." };
+  }
+  const goal = goalParts.join(" ").trim();
+  if (goal && parsed.executionId) return { ok: false, reason: "Use a free-text goal to create a plan, or --execution to resolve an existing plan." };
+  if (!goal && !parsed.executionId) return { ok: false, reason: "operator requires a free-text goal or --execution <id>." };
+  if (parsed.decision && !parsed.executionId) return { ok: false, reason: "Create and review the plan first; use --execution <id> with --approve or --reject." };
+  if (!parsed.sourceUrl) return { ok: false, reason: "operator requires --source <http-url>." };
+  if (!parsed.outputPath) return { ok: false, reason: "operator requires --output <relative-file>." };
+  return { ok: true, goal: goal || undefined, executionId: parsed.executionId, sourceUrl: parsed.sourceUrl, outputPath: parsed.outputPath, decision: parsed.decision, stateFilePath: parsed.stateFilePath, workspaceRoot: parsed.workspaceRoot };
 }
 
 function parseDashboardArgs(args: string[]):
@@ -989,6 +1088,8 @@ function usage(): string {
   return [
     "Usage:",
     "  quantico run \"<goal>\"",
+    "  quantico operator \"Investiga X y guarda un resumen\" --source <http-url> --output <relative-file> [--state-file <path>] [--workspace <path>]",
+    "  quantico operator --execution <executionId> --source <http-url> --output <relative-file> --approve|--reject [--state-file <path>] [--workspace <path>]",
     "  quantico dashboard [--port <port>] [--state-file <path>]",
     "  quantico approval <executionId> --approve|--reject [--reason \"<reason>\"] [--state-file <path>]",
     "  quantico controlled-run <profile.json> [--state-file <path>]",
