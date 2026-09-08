@@ -40,6 +40,9 @@ test("dashboard reads audit views and delegates explicit run actions without pro
     const page = await fetch(dashboard.url).then((response) => response.text());
     assert.match(page, /Launch controlled run/);
 
+    const clientScript = await fetch(`${dashboard.url}/dashboard.js`).then((response) => response.text());
+    assert.match(clientScript, /loadExecutions/);
+
     const executions = await fetch(`${dashboard.url}/api/executions`).then((response) => response.json()) as { totalExecutions: number };
     assert.equal(executions.totalExecutions, 1);
 

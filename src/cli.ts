@@ -1005,5 +1005,5 @@ function usage(): string {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const exitCode = await runCli(process.argv.slice(2));
-  process.exit(exitCode);
+  process.exitCode = exitCode;
 }
