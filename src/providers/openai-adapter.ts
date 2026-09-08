@@ -105,7 +105,7 @@ export class OpenAIAdapter implements ProviderAdapter {
 
   constructor(options: OpenAIAdapterOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
-    this.apiMode = options.apiMode ?? "chat_completions";
+    this.apiMode = options.apiMode ?? "responses";
     this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
     this.httpClient = options.httpClient ?? new FetchProviderHttpClient();
     this.reasoningEffort = options.reasoningEffort ?? "minimal";

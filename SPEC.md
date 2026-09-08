@@ -4,7 +4,7 @@
 
 Quantico AI OS es una capa de orquestacion multimodelo que recibe un objetivo humano, compila el contexto necesario, decide que proveedor de IA y herramientas usar, ejecuta el flujo, verifica el resultado y registra costo, tokens, latencia y outcome.
 
-Esta especificacion cubre el MVP V0.1 cerrado, V0.2 cerrada, V0.3 cerrada, V0.4 cerrada, V0.5 cerrada y la apertura documental de V0.6.
+Esta especificacion cubre el MVP V0.1 y sus incrementos cerrados hasta V0.25, incluida la CLI operacional auditable.
 
 ## Alcance Del MVP V0.1
 
@@ -3406,6 +3406,63 @@ El indice no debe resolver inconsistencias; solo debe propagarlas desde V0.16.
 - Router COST-FIRST permanece intacto.
 - `advisorAuthority` no cambia.
 - No se agregan provider calls, writes, dashboard, fallback, retries, ML ni nueva DB.
+
+## V0.25 - Operational CLI Surface
+
+### Objetivo V0.25
+
+Permitir que un operador ejecute los flujos controlados y consulte evidencia ya persistida desde una CLI local, conservando la API y el Kernel como unica fuente de semantica operacional.
+
+### Comandos
+
+```text
+quantico run "<goal>"
+quantico controlled-run <profile.json> [--state-file <path>]
+quantico controlled-status <runId> [--state-file <path>]
+quantico approval <executionId> --approve|--reject [--reason "<reason>"] [--state-file <path>]
+quantico close-run <runId> [--approve|--reject] [--reason "<reason>"] [--state-file <path>]
+quantico execution-timeline <executionId> [--state-file <path>]
+quantico execution-summary <executionId> [--state-file <path>]
+quantico execution-summaries [--status <status>] [--project-id <id>] [--data-quality <quality>] [--requires-attention true|false] [--limit <n>] [--state-file <path>]
+quantico execution-result <executionId> [--state-file <path>]
+quantico provider-scorecards [--provider openai|anthropic --model <model>] [--state-file <path>]
+quantico authority-safety [--execution-id <executionId>] [--state-file <path>]
+```
+
+### Reglas De Delegacion
+
+- `controlled-run` usa exclusivamente `runControlledExecution` de V0.18/V0.19.
+- `controlled-status` usa exclusivamente la lectura V0.20.
+- `approval` usa exclusivamente `approvePendingStep` o `rejectPendingStep`; no continua un execution ni llama al provider.
+- `close-run` usa exclusivamente `closeControlledRun` de V0.24.
+- Los comandos de timeline, summaries, result, scorecards y authority safety son lecturas de sus APIs ya existentes.
+- La CLI no hace routing, no evalua politicas, no calcula costos y no reconstruye timelines o summaries.
+
+### Contrato De Salida Y Errores
+
+- Toda respuesta exitosa se imprime como JSON serializable.
+- Argumentos incompletos, desconocidos o contradictorios fallan antes de crear la API o mutar estado.
+- `approval` exige exactamente uno de `--approve` y `--reject`.
+- La consulta puntual inexistente devuelve `not_found` y codigo de salida no exitoso.
+- `controlled-run` devuelve codigo no exitoso cuando el perfil es rechazado o no puede persistirse el manifest.
+- La CLI no imprime el contenido completo del perfil, prompts, API keys, workspace IDs ni secretos.
+
+### Limites V0.25
+
+- No cambia Router COST-FIRST ni `advisorAuthority`.
+- No amplifica Authority Policy ni Human Approval Gate.
+- No introduce provider calls para comandos de lectura, aprobacion, rechazo o cierre rechazado.
+- No agrega dashboard, retries, fallback, nueva DB, ranking automatico ni nuevos providers.
+
+### Criterios De Aceptacion V0.25
+
+- La CLI delega cada comando a la API o componente existente correspondiente.
+- Un perfil JSON invalido se rechaza antes de invocar `runControlledExecution`.
+- Flags de aprobacion o cierre contradictorios se rechazan antes de invocar API.
+- La CLI permite seleccionar estado persistido con `--state-file`.
+- Las consultas preservan los outcomes `found` y `not_found` de sus APIs.
+- La CLI no expone secretos ni reimplementa semantica de negocio.
+- Router COST-FIRST, Human Approval Gate y `advisorAuthority` permanecen intactos.
 
 ## Apertura V0.16
 

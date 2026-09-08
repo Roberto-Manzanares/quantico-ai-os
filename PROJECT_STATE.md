@@ -2,15 +2,15 @@
 
 ## Estado Actual
 
-Fase: V0.24 implemented.
+Fase: V0.25 implemented.
 
-Version objetivo: V0.24.
+Version objetivo: V0.25.
 
-Codigo implementado: si para V0.24.
+Codigo implementado: si para V0.25.
 
-Estado actual: V0.24 implementada y validada.
+Estado actual: V0.25 implementada y validada.
 
-Ultimo hito: implementacion de V0.24 Controlled Run Closure Command.
+Ultimo hito: CLI operacional auditable para los flujos controlados y las consultas existentes.
 
 Provider validado V0.1: OpenAI.
 
@@ -34,7 +34,15 @@ Latencia V0.2: 1141ms.
 
 Stop reason V0.2: `end_turn`.
 
-Tests actuales: 217/217 pass.
+Tests actuales: 250/250 pass.
+
+V0.25: implementada y validada por dry-run.
+
+Titulo V0.25: Operational CLI Surface.
+
+Objetivo V0.25: exponer por CLI la ejecucion controlada, aprobacion humana, cierre de run y consultas auditables ya disponibles en API, sin duplicar logica ni ampliar autoridad.
+
+Commit de cierre V0.25: `8d60039`.
 
 Ultimo commit funcional V0.1: `8b913d00f2f8dee1f6e733f45c745dec028a05af`.
 
@@ -794,8 +802,9 @@ Reporte suficiente validado:
 
 ## Pendiente Para Siguiente Fase
 
-- Abrir V0.25 solo documentalmente antes de tocar codigo.
-- Partir de V0.24 cerrada y congelada.
+- Abrir V0.26 solo documentalmente antes de tocar codigo.
+- Partir de V0.25 cerrada y congelada.
+- Antes de ampliar la superficie, validar una ejecucion `live` controlada end-to-end con evidencia persistida y aprobacion humana cuando corresponda.
 - Mantener `closeControlledRun(runId, options?)` como cierre operacional compuesto ya validado.
 - Evitar otra capa read-only redundante salvo necesidad operacional clara.
 - Mantener el reporte read-only y sin autoridad operativa.
@@ -890,6 +899,7 @@ Una ejecucion real exitosa contra Anthropic debe recorrer el mismo Kernel end-to
 - V0.23 declara contrato de Controlled Run Finalization Consistency Gate para cerrar un run solo cuando Manifest, Execution, Ledger y Timeline tengan evidencia terminal coherente, sin duplicar subsistemas ni agregar autoridad.
 - V0.23 queda implementada con `finalizeControlledRun(runId)`, outcome de finalizacion separado del lifecycle, marcador append-only compacto, deteccion de `not_found`, `not_finalizable` e inconsistencias persistidas, cero provider calls, regresion V0.22 y 211/211 tests.
 - V0.24 declara e implementa `closeControlledRun(runId, options?)` para componer V0.22 Completion y V0.23 Finalization en un cierre operacional unico, con aprobacion explicita cuando aplique, rechazo con cero provider calls, runs terminales delegados directo a finalizacion, inconsistencias mapeadas a `closure_inconsistent` y 217/217 tests.
+- V0.25 declara e implementa una CLI operacional delgada para execution controlada, aprobacion, cierre y lecturas auditables, con salida JSON, validacion local de argumentos, sin duplicar semantica de API ni ampliar autoridad y 250/250 tests.
 - Los riesgos iniciales estan documentados.
 - Los pendientes para la siguiente fase estan listados.
 - No se documentan secretos ni valores de `.env`.

@@ -2257,3 +2257,40 @@ Resultado validado:
 Consecuencia:
 
 Router COST-FIRST, Human Approval Gate, `advisorAuthority`, Kernel Execution y ProviderAdapter permanecen intactos. V0.24 no agrega autoridad, fallback, retries, dashboard, nueva DB ni provider behavior. Completion V0.22, Finalization V0.23, Manifest, Timeline, Audit Index, Budget Ledger y Authority Audit se reutilizan sin duplicar su logica.
+
+## Decision 050: V0.25 Expone La CLI Operacional
+
+Estado: aceptada.
+
+Decision:
+
+V0.25 expone una CLI delgada sobre las APIs existentes para iniciar un run controlado, consultar su estado, resolver una aprobacion humana, cerrar un run y leer evidencia operativa. La CLI serializa respuestas JSON y delega toda semantica al Kernel y a las APIs ya validadas.
+
+Razon:
+
+La API permite integrar Quantico AI OS, pero el operador necesita una superficie local y auditable para recorrer el ciclo controlado sin construir una interfaz visual. El incremento reduce friccion operacional sin introducir otra capa de negocio ni convertir la CLI en un segundo orquestador.
+
+Contrato:
+
+- `controlled-run <profile.json>` lee un perfil JSON y delega a `runControlledExecution`.
+- `controlled-status <runId>` lee el estado sanitizado del manifest.
+- `approval <executionId> --approve|--reject` resuelve un pending step sin continuar automaticamente el provider.
+- `close-run <runId> [--approve|--reject]` compone el cierre V0.24.
+- `execution-timeline`, `execution-summary`, `execution-summaries`, `execution-result`, `provider-scorecards` y `authority-safety` son lecturas de las APIs auditables existentes.
+- `--state-file <path>` selecciona el estado persistido de cada comando aplicable.
+- La salida es JSON y los argumentos invalidos se rechazan antes de llamar a la API.
+
+Limites:
+
+- La CLI no reimplementa Kernel, Router, Authority Policy, Human Approval Gate, Timeline, Audit Index, Ledger ni Manifest.
+- No agrega provider calls fuera de las que ya autorice el flujo `live` de V0.18.
+- No revela prompts completos, API keys, workspace IDs ni secretos.
+- No agrega dashboard, fallback, retries, nuevos providers, nueva base de datos ni autoridad nueva.
+
+Resultado validado:
+
+- Perfil controlado valido e invalido cubiertos antes de invocar API.
+- Aprobacion y rechazo humanos cubiertos; flags contradictorios se bloquean localmente.
+- Cierre, estado, timeline, summaries, resultado, scorecards y metricas de autoridad delegan a sus APIs existentes.
+- Consultas `not_found` devuelven codigo no exitoso donde aplica.
+- Tests: 250/250 pass.

@@ -35,7 +35,11 @@ test("OpenAI adapter normalizes model response", async () => {
       usage: { prompt_tokens: 11, completion_tokens: 7 }
     })
   );
-  const adapter = new OpenAIAdapter({ apiKey: "test-openai-key", httpClient });
+  const adapter = new OpenAIAdapter({
+    apiKey: "test-openai-key",
+    apiMode: "chat_completions",
+    httpClient
+  });
 
   const result = await adapter.sendMessage({
     executionId: "exec_test",
@@ -53,14 +57,15 @@ test("OpenAI adapter normalizes model response", async () => {
   assert.equal(httpClient.requests[0]?.url, "https://api.openai.com/v1/chat/completions");
 });
 
-test("OpenAI adapter normalizes Responses API response", async () => {
+test("OpenAI adapter defaults gpt-5-nano to Responses API and output_text", async () => {
   const httpClient = new MockHttpClient(
     jsonResponse({
       status: "completed",
+      output_text: "QUANTICO_KERNEL_OK",
       output: [
         {
           type: "message",
-          content: [{ type: "output_text", text: "QUANTICO_KERNEL_OK" }]
+          content: [{ type: "output_text", text: "fallback text must not be selected" }]
         }
       ],
       usage: {
@@ -72,7 +77,6 @@ test("OpenAI adapter normalizes Responses API response", async () => {
   );
   const adapter = new OpenAIAdapter({
     apiKey: "test-openai-key",
-    apiMode: "responses",
     httpClient,
     reasoningEffort: "minimal"
   });
@@ -81,7 +85,7 @@ test("OpenAI adapter normalizes Responses API response", async () => {
     executionId: "exec_test",
     model: "gpt-5-nano",
     messages: [{ role: "user", content: "Hello" }],
-    maxOutputTokens: 128
+    maxOutputTokens: 64
   });
   const body = JSON.parse(String(httpClient.requests[0]?.init.body)) as {
     model: string;
@@ -93,7 +97,7 @@ test("OpenAI adapter normalizes Responses API response", async () => {
   assert.equal(httpClient.requests[0]?.url, "https://api.openai.com/v1/responses");
   assert.equal(body.model, "gpt-5-nano");
   assert.deepEqual(body.input, [{ role: "user", content: "Hello" }]);
-  assert.equal(body.max_output_tokens, 128);
+  assert.equal(body.max_output_tokens, 64);
   assert.equal(body.reasoning.effort, "minimal");
   assert.equal(result.content, "QUANTICO_KERNEL_OK");
   assert.equal(result.provider, "openai");
@@ -102,7 +106,38 @@ test("OpenAI adapter normalizes Responses API response", async () => {
   assert.equal(result.outputTokens, 9);
   assert.equal(result.estimatedCostUsd, null);
   assert.equal(adapter.getLastDiagnostics()?.reasoningTokens, 2);
-  assert.equal(adapter.getLastDiagnostics()?.outputTextLength, null);
+  assert.equal(adapter.getLastDiagnostics()?.outputTextLength, "QUANTICO_KERNEL_OK".length);
+});
+
+test("OpenAI Responses adapter normalizes an empty output_text without inventing content", async () => {
+  const httpClient = new MockHttpClient(
+    jsonResponse({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output_text: "",
+      output: [],
+      usage: {
+        input_tokens: 80,
+        output_tokens: 64,
+        output_tokens_details: { reasoning_tokens: 64 }
+      }
+    })
+  );
+  const adapter = new OpenAIAdapter({ apiKey: "test-openai-key", httpClient });
+
+  const result = await adapter.sendMessage({
+    executionId: "exec_empty_response",
+    model: "gpt-5-nano",
+    messages: [{ role: "user", content: "Hello" }],
+    maxOutputTokens: 64
+  });
+
+  assert.equal(result.content, "");
+  assert.equal(result.inputTokens, 80);
+  assert.equal(result.outputTokens, 64);
+  assert.equal(adapter.getLastDiagnostics()?.responseStatus, "incomplete");
+  assert.deepEqual(adapter.getLastDiagnostics()?.incompleteDetails, { reason: "max_output_tokens" });
+  assert.equal(adapter.getLastDiagnostics()?.outputTextLength, 0);
 });
 
 test("OpenAI adapter records safe response diagnostics", async () => {
@@ -121,7 +156,11 @@ test("OpenAI adapter records safe response diagnostics", async () => {
       }
     })
   );
-  const adapter = new OpenAIAdapter({ apiKey: "test-openai-key", httpClient });
+  const adapter = new OpenAIAdapter({
+    apiKey: "test-openai-key",
+    apiMode: "chat_completions",
+    httpClient
+  });
 
   await adapter.sendMessage({
     executionId: "exec_test",
