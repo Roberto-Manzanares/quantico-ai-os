@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "cli": "node dist/src/cli.js",
+    "dashboard": "node dist/src/cli.js dashboard",
     "prepare": "npm run build",
     "smoke:anthropic": "npm run build && node --env-file-if-exists=.env dist/src/manual/anthropic-smoke.js",
     "smoke:openai": "npm run build && node --env-file-if-exists=.env dist/src/manual/openai-smoke.js",

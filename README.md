@@ -41,6 +41,20 @@ npm run cli -- --help
 npm run cli -- execution-summaries
 ```
 
+## Local product interface
+
+Start the local dashboard (bound to `127.0.0.1`) and open the printed URL:
+
+```bash
+npm run dashboard -- --state-file .quantico/state.json
+```
+
+The dashboard reads execution status, result, timeline, cost, provider/model and
+audit evidence. It can submit an existing controlled-run profile, resolve an
+explicit human approval, continue an approved execution, and close or finalize a
+run through the existing API. It does not bypass COST-FIRST or the Human Approval
+Gate.
+
 To expose the `quantico` command in the current machine's npm environment:
 
 ```bash

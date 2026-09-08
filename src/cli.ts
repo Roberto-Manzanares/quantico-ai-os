@@ -9,12 +9,14 @@ import {
   type ProviderName,
   type QuanticoApi
 } from "./index.js";
+import { startDashboard, type DashboardOptions } from "./dashboard.js";
 
 export interface CliDependencies {
   createApi?: (options?: { stateFilePath?: string }) => QuanticoApi;
   readTextFile?: (path: string) => Promise<string>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
+  startDashboard?: (options: DashboardOptions) => Promise<{ url: string }>;
 }
 
 export async function runCli(
@@ -24,6 +26,23 @@ export async function runCli(
   const [command, ...args] = argv;
   const stdout = dependencies.stdout ?? console.log;
   const stderr = dependencies.stderr ?? console.error;
+
+  if (command === "dashboard") {
+    const parsed = parseDashboardArgs(args);
+
+    if (!parsed.ok) {
+      stderr(parsed.reason);
+      stderr(usage());
+      return 1;
+    }
+
+    const dashboard = await (dependencies.startDashboard ?? startDashboard)({
+      port: parsed.port,
+      stateFilePath: parsed.stateFilePath
+    });
+    stdout(`Quantico dashboard available at ${dashboard.url}`);
+    return 0;
+  }
 
   if (command === "run" && args.length > 0) {
     const system = createQuanticoSystem();
@@ -443,6 +462,43 @@ function parseApprovalArgs(args: string[]):
     reason: parsed.reason,
     stateFilePath: parsed.stateFilePath
   };
+}
+
+function parseDashboardArgs(args: string[]):
+  | { ok: true; port?: number; stateFilePath?: string }
+  | { ok: false; reason: string } {
+  const parsed: { ok: true; port?: number; stateFilePath?: string } = { ok: true };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const value = args[index + 1];
+
+    if (arg === "--port") {
+      const port = Number(value);
+
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return { ok: false, reason: "--port must be an integer from 1 to 65535." };
+      }
+
+      parsed.port = port;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--state-file") {
+      if (!value) {
+        return { ok: false, reason: "--state-file requires a value." };
+      }
+
+      parsed.stateFilePath = value;
+      index += 1;
+      continue;
+    }
+
+    return { ok: false, reason: `Unknown dashboard option: ${arg}.` };
+  }
+
+  return parsed;
 }
 
 function parseExecutionResultArgs(args: string[]):
@@ -933,6 +989,7 @@ function usage(): string {
   return [
     "Usage:",
     "  quantico run \"<goal>\"",
+    "  quantico dashboard [--port <port>] [--state-file <path>]",
     "  quantico approval <executionId> --approve|--reject [--reason \"<reason>\"] [--state-file <path>]",
     "  quantico controlled-run <profile.json> [--state-file <path>]",
     "  quantico controlled-status <runId> [--state-file <path>]",

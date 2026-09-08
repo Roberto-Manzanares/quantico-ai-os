@@ -56,6 +56,22 @@ test("CLI controlled-run reads a profile JSON and delegates to runControlledExec
   assert.equal("goal" in payload, false);
 });
 
+test("CLI dashboard starts the local interface with explicit options", async () => {
+  const output: string[] = [];
+  let receivedOptions: { port?: number; stateFilePath?: string } | undefined;
+  const exitCode = await runCli(["dashboard", "--port", "4311", "--state-file", "tmp/state.json"], {
+    startDashboard: async (options) => {
+      receivedOptions = options;
+      return { url: "http://127.0.0.1:4311" };
+    },
+    stdout: (message) => output.push(message)
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(receivedOptions, { port: 4311, stateFilePath: "tmp/state.json" });
+  assert.match(output[0] ?? "", /127\.0\.0\.1:4311/);
+});
+
 test("CLI controlled-run rejects invalid profile JSON before API use", async () => {
   let apiCalled = false;
   const errors: string[] = [];
