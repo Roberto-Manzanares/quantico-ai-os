@@ -37,7 +37,8 @@ The CLI can be invoked without provider credentials to display its stable comman
 surface; this makes no provider call:
 
 ```bash
-npm run cli --
+npm run cli -- --help
+npm run cli -- execution-summaries
 ```
 
 To expose the `quantico` command in the current machine's npm environment:
@@ -70,7 +71,7 @@ node --env-file-if-exists=.env dist/src/cli.js
 ```
 
 The CLI's controlled-run and approval commands preserve the Human Approval Gate;
-consult `quantico` or `npm run cli --` for the available commands and options.
+consult `npm run cli -- --help` for the available commands and options.
 
 ## Verify an installation
 
