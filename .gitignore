@@ -3,4 +3,5 @@ dist/
 coverage/
 .quantico/
 .env
+.wrangler/
 *.log

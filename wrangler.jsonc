@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "quantico-ai-os-demo",
+  "main": "src/cloudflare-demo-worker.ts",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": true
+}
