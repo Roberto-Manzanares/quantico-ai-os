@@ -1,14 +1,21 @@
 {
   "name": "quantico-ai-os",
   "version": "0.1.0",
-  "description": "Quantico AI OS V0.1 multimodel orchestration skeleton.",
+  "description": "Quantico AI OS V1.0 multimodel orchestration kernel.",
   "type": "module",
   "private": true,
   "bin": {
     "quantico": "./dist/src/cli.js"
   },
+  "files": [
+    "dist/src",
+    "README.md",
+    ".env.example"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "cli": "node dist/src/cli.js",
+    "prepare": "npm run build",
     "smoke:anthropic": "npm run build && node --env-file-if-exists=.env dist/src/manual/anthropic-smoke.js",
     "smoke:openai": "npm run build && node --env-file-if-exists=.env dist/src/manual/openai-smoke.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -19,6 +26,8 @@
     "typescript": "^5.9.2"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10"
 }
